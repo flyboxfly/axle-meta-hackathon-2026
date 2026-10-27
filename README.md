@@ -1,4 +1,4 @@
-# Axle × Meta — H2 local prototype
+# Axle × Meta — H3 local prototype
 
 Standalone hackathon implementation begun October 26, 2026. Built by a carrier, for carriers.
 
@@ -63,3 +63,15 @@ Every submission makes live, billable Meta requests. There is no offline success
 The browser submits explicit structured facts with a short intent. Muse selects the freight tool; delegated inputs must equal confirmed facts exactly. The tool invokes the same deterministic evaluator in process (H1 CLI retains its HTTP path). Model prose is not displayed: concise decision copy and figures come from canonical results. No shared conversation history is stored. Reevaluation resubmits the full form. Previous result comparison is browser-local. Costs stay unknown when blank. Other equipment choices require a matching profile and cannot pass acceptance.
 
 The original `/api/v1/agent` remains disabled. H2 uses the separately protected `/api/v1/browser/evaluate`. The owner completed the three live browser scenarios on Mac on October 26, 2026; see docs/TEST_RESULTS.md. Two earlier failures remain undiagnosed. Offline tests do not establish live reliability.
+
+## H3 local screenshot intake (review candidate)
+
+Use only synthetic screenshots with no personal details, carrier IDs or credentials. Install the updated requirements (adds pinned Pillow 12.3.0), then run the same loopback server. Read docs/H3_REVIEW.md for exact scope and limitations.
+
+The page now accepts one PNG/JPEG up to 4 MiB. Select the included `fixtures/synthetic_freight_screenshot.png`, check the synthetic-data consent, then click **Read screenshot with Muse Spark**. This is one live, billable extraction request, not a freight evaluation. Read the supporting text/issues, compare and edit the facts below, fill any missing mileage and select equipment if unknown. Check **I reviewed and corrected…**, then submit through the existing evaluation flow (a separate live delegation). Extraction and evaluation share the local paid-request budget.
+
+Changing facts invalidates screenshot confirmation. A new screenshot clears prior costs, schedule and results. On extraction failure no draft is applied; use **Use manual entry** to clear the upload workflow and enter facts manually. Model-reported supporting text is not independent OCR proof. Ambiguous payout and unshown miles stay unknown; never add a displayed bid/FSC twice. No screenshots are saved by the application; image pixels are sent to Meta under its service/account policies.
+
+For the synthetic fixture, expect draft payout $420, loaded miles 180, additional miles 60, and 26-foot box truck. After carrier confirmation, unknown expenses/schedule should produce NEED_MORE_INFORMATION. The owner supplied a successful live screenshot extraction and confirmed-facts evaluation on October 27, 2026. See docs/TEST_RESULTS.md. This single synthetic example does not establish general screenshot accuracy or repeated-run reliability.
+
+H3 extraction now uses strict Responses `text.format` JSON Schema, low reasoning effort and a bounded 4096-token output budget. Empty, incomplete and invalid results fail closed; only bounded format/status diagnostics are logged. The initial version relied on prompt-only JSON and failed parsing on the owner's live attempt; the earlier preview policy also blocked blob images. Both implementation gaps were corrected before the successful run. The exact form of the earlier invalid JSON is unknown.

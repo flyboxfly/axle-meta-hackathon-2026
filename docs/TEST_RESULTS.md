@@ -56,3 +56,15 @@ Mobile visual evidence: three owner-supplied Chrome responsive-emulation screens
 ## Final review correction — October 27, 2026
 
 Review reproduced a 500 for an incorrect browser password containing a non-ASCII character. String compare_digest rejects non-ASCII text; browser authentication now compares UTF-8 byte sequences, preserving constant-time comparison. A regression case confirms that an incorrect non-ASCII password returns 401 with the Basic challenge. Assistant workspace: **29 tests pass**. No paid request or change to H1 bearer authentication. This correction is not yet installed in the owner's extracted Mac folder.
+
+## H3 owner execution and final review — October 27, 2026
+
+Owner Mac initial H3 suite: 50 passed in 2.06s. After preview/schema diagnostic patch: 50 passed in 1.99s. After structured-output/completion update: **56 passed in 2.10s**. No credentials were supplied to the assistant.
+
+Earlier attempts: browser preview blocked by CSP; image request returned generic 502/tool_schema_validation. Preview permission was fixed. A subsequent safe diagnostic showed root json_invalid. Raw output was not recorded; exact invalid format is unknown. Strict Responses text.format, low reasoning effort and bounded 4096-token output replaced prompt-only JSON/1600 tokens. Successful execution followed, without proving which change resolved which generation problem.
+
+Owner screenshot at 09:19:41 Eastern shows the synthetic screenshot, model muse-spark-1.3, extracted supporting text (26-foot box truck, $420, 180 loaded miles, 60 additional miles), mileage-confirmation caveat and a draft awaiting review. Screenshot at 09:22:19 shows review checked and confirmed values in form, followed by NEED_MORE_INFORMATION, all-mile RPM $1.75, loaded RPM $2.33, revenue-target gap $60 and unknown costs/surplus. Expanded evidence identifies evaluate_freight_opportunity with executed_and_validated status. Screenshots remain conversation evidence and are not included in the public candidate. Owner reported server stopped afterward.
+
+This demonstrates one owner-executed synthetic screenshot → draft → confirmation → real delegation → canonical evaluation. It is not an assistant live call, an accuracy benchmark or proof of general repeated reliability. Successful mobile draft/evaluated states remain unverified.
+
+Final candidate: **57 offline tests** in assistant workspace (29 H2 + 28 H3). The additional final test uses the installed OpenAI SDK and mocked HTTP to verify image and strict structured-output serialization without reaching Meta. It is not yet owner-executed. Dependencies, Python compilation, JavaScript syntax and whitespace checked. Complete binary patch is checked against an isolated H2 tree and every reconstructed source file is compared byte-for-byte before delivery.

@@ -7,9 +7,12 @@ import secrets
 import threading
 import time
 from collections import deque
+from contextlib import contextmanager
+from typing import Literal
+from starlette.concurrency import run_in_threadpool
 from fastapi import APIRouter, Depends, HTTPException, Request
 from fastapi.responses import HTMLResponse
-from pydantic import BaseModel, ConfigDict, Field
+from pydantic import BaseModel, ConfigDict, Field, model_validator
 from .economics import evaluate
 from .meta_agent import BASE_URL, MODEL, delegate
 from .schemas import Opportunity
@@ -23,6 +26,14 @@ class WebRequest(BaseModel):
     model_config = ConfigDict(extra="forbid")
     message: str = Field(default="Ask Axle to evaluate this opportunity.", min_length=1, max_length=1500)
     opportunity: Opportunity
+    source: Literal["manual", "screenshot"] = "manual"
+    screenshot_confirmed: bool = False
+
+    @model_validator(mode="after")
+    def require_screenshot_confirmation(self):
+        if self.source == "screenshot" and not self.screenshot_confirmed:
+            raise ValueError("Confirm the extracted screenshot facts before evaluation")
+        return self
 
 
 def local_access(request: Request):
@@ -48,7 +59,7 @@ def local_access(request: Request):
 def interface():
     return HTMLResponse(Path(__file__).with_name("carrier.html").read_text(), headers={
         "Cache-Control": "no-store", "X-Frame-Options": "DENY",
-        "Content-Security-Policy": "default-src 'self'; script-src 'unsafe-inline'; style-src 'unsafe-inline'; connect-src 'self'; frame-ancestors 'none'; base-uri 'none'; form-action 'self'"})
+        "Content-Security-Policy": "default-src 'self'; script-src 'unsafe-inline'; style-src 'unsafe-inline'; connect-src 'self'; img-src 'self' blob:; frame-ancestors 'none'; base-uri 'none'; form-action 'self'"})
 
 
 def live_run(body: WebRequest):
@@ -75,8 +86,8 @@ def live_run(body: WebRequest):
             "response_id": result["response_id"], "integration": "Meta API prototype; no native connector"}
 
 
-@router.post("/api/v1/browser/evaluate", dependencies=[Depends(local_access)])
-def browser_evaluate(body: WebRequest):
+@contextmanager
+def paid_slot():
     if not _gate.acquire(blocking=False):
         raise HTTPException(429, "An evaluation is running. Please wait.")
     try:
@@ -87,7 +98,7 @@ def browser_evaluate(body: WebRequest):
             raise HTTPException(429, "Local limit reached. Try again in one minute.")
         _attempts.append(now)
         try:
-            return live_run(body)
+            yield
         except HTTPException:
             raise
         except Exception as exc:
@@ -113,3 +124,29 @@ def browser_evaluate(body: WebRequest):
             raise HTTPException(502, "Meta delegation could not be verified. Your inputs are preserved; try again.") from None
     finally:
         _gate.release()
+
+
+@router.post("/api/v1/browser/evaluate", dependencies=[Depends(local_access)])
+def browser_evaluate(body: WebRequest):
+    with paid_slot():
+        return live_run(body)
+
+
+@router.post("/api/v1/browser/screenshot", dependencies=[Depends(local_access)])
+async def screenshot_route(request: Request):
+    from .vision import MAX_IMAGE_BYTES, extract_screenshot
+    if request.headers.get("x-axle-synthetic") != "true":
+        raise HTTPException(422, "Confirm that this screenshot contains synthetic, non-sensitive data")
+    content_type = request.headers.get("content-type", "").split(";", 1)[0].strip().lower()
+    if content_type not in {"image/png", "image/jpeg"}:
+        raise HTTPException(415, "Use a PNG or JPEG screenshot")
+    raw = bytearray()
+    async for chunk in request.stream():
+        if len(raw) + len(chunk) > MAX_IMAGE_BYTES:
+            raise HTTPException(413, "Choose one image up to 4 MiB")
+        raw.extend(chunk)
+    def run():
+        with paid_slot():
+            return extract_screenshot(bytes(raw), content_type)
+    from fastapi.responses import JSONResponse
+    return JSONResponse(await run_in_threadpool(run), headers={"Cache-Control": "no-store"})
