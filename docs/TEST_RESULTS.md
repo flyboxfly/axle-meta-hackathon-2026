@@ -46,3 +46,9 @@ Follow-up local change replaces broad exception-text debugging with bounded serv
 Owner applied the safe diagnostic update, reported 21 passed in 1.49s, added three diagnostic regression cases, then reported **24 passed in 1.54s**. These cases confirm ValueError, RuntimeError and unexpected failures log a fixed category without the private exception text. Mac tests use a separate test_diagnostics.py; candidate tests consolidate those cases in test_h2.py. Exact Mac/candidate tree equality is not established. Diagnostics were verified offline, not by deliberately provoking a paid provider failure. Earlier live failures remain undiagnosed.
 
 Final candidate: 24 offline cases rerun in the assistant workspace on October 27. No additional paid request made. See H2_REVIEW.md for the publication scope and remaining checks.
+
+## H2 follow-up review — October 27, 2026
+
+Assistant workspace: **28 passed** after four offline failure-injection cases for provider timeout, connection failure, provider HTTP 429 and invalid tool-schema data. Each verifies generic browser errors, safe category logging, exclusion of private exception text, lock release and successful next request using a fake client. No paid provider request made; earlier live failure root cause remains unknown. Owner Mac remains at 24 reported passing tests until the follow-up tests are installed there.
+
+Mobile visual evidence: three owner-supplied Chrome responsive-emulation screenshots at 390 × 905 show the header, opportunity form, expanded costs/schedule form, button, initial decision panel and footer. Visible content fits and stacks without apparent clipping. Limited visual PASS only; evaluated metrics/evidence states, physical devices and broader interaction/accessibility testing remain unverified. No inference requested for this check.

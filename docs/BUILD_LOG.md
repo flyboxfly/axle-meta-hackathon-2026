@@ -21,3 +21,7 @@ Extended the verified standalone H1 source on a local feature branch. Added a sa
 ## 2026-10-27 — H2 final review preparation
 
 Rechecked public main against local H1 baseline. Recorded owner live evidence and 24 passing Mac tests following sanitized diagnostics. Reconciled stale H2 status text, excluded Mac environment/backup files, and prepared a complete baseline-relative patch, source snapshot and checksums for owner review. Existing H1 evaluator/harness remain unchanged. Earlier live failures remain undiagnosed. No remote mutation, deployment or paid request performed.
+
+## 2026-10-27 — H2 PR follow-up
+
+Owner authorized proceeding with the four offline reliability tests and mobile verification record after stopping the Mac server. Follow-up changes tests and documentation only. Assistant reran 28 passing tests; added limited 390 × 905 screenshot visual evidence. No application changes, paid inference, main update, merge or deployment. The Mac's last reported suite remains 24 tests.

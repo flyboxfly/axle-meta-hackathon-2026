@@ -1,6 +1,6 @@
 # H2 final review — October 27, 2026
 
-Status: LOCAL REVIEW CANDIDATE. No H2 branch, PR, merge or deployment has been published.
+Status: DRAFT PR #1 published; reliability tests and limited mobile visual evidence added for review. Merge and deployment remain pending approval. The original candidate and its validation are recorded below as historical context.
 
 ## Baseline and scope
 
@@ -41,3 +41,13 @@ After owner approval: publish this candidate on feature/h2-carrier-interface and
 PR description: Carriers can enter confirmed freight facts, delegate through Muse Spark to Axle, add missing costs and reevaluate. Canonical results show missing information, negotiation or supplied checks passing without displaying unverified model arithmetic. Adds loopback browser authentication, concurrency/rate limits and sanitized failure diagnostics. Validation: 24 offline tests; owner-supplied Mac live screenshots for the three states. Earlier intermittent failures remain undiagnosed; mobile QA and public deployment remain out of scope.
 
 Publication approval does not authorize merging, deployment, paid tests, credential changes or production access.
+
+## Post-publication offline reliability review — October 27, 2026
+
+Owner approved the reviewed candidate; draft PR #1 was opened at https://github.com/flyboxfly/axle-meta-hackathon-2026/pull/1 with head deb7f207fa6f8304f2495f9cc3f70fceba94a9f4. All 21 remote blobs matched the approved archive and main remained at the H1 baseline. The earlier local-review status above records preparation before publication.
+
+This follow-up adds four offline failure-injection cases for provider timeout, connection error, provider status 429 and tool-schema validation. Each verifies a generic 502, bounded log category, private error-text exclusion, lock release and successful subsequent request using a fake provider client. All 28 tests pass. No application behavior changed and no paid inference was performed. These checks validate recovery mechanics, not the cause or frequency of the earlier live failures. The limited owner mobile viewport check is recorded below; broader mobile validation remains pending.
+
+## Mobile viewport visual check — October 27, 2026
+
+Owner supplied three Chrome responsive-emulation screenshots at 390 × 905: expanded cost/schedule form, page header/opportunity form, and initial decision panel/footer. Assistant visually inspected all three. Visible content fits the viewport without apparent clipping; panels stack vertically, form labels and controls remain readable, and disclosure/footer text wraps. This is a limited visual PASS for the supplied viewport and initial state only, not a physical-device or automated overflow check. Evaluated metrics/evidence states, touch interaction, keyboard focus, screen readers and other viewport sizes remain unverified. No model request was needed for these screenshots.
