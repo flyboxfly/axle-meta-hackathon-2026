@@ -37,3 +37,8 @@ Recorded owner 56-test Mac result and supplied successful live image extraction/
 ## 2026-10-27 — H4 local benchmark slice
 
 Verified merged H3 main 01c9f45 through GitHub and cloned only the standalone competition repository. Created local feature/h4-carrier-benchmarks. Added ephemeral authenticated carrier benchmark envelope, deterministic target override/unknown handling, compact confirmation controls and source/change display. Kept model tool and vision schemas free of benchmarks. All 57 prior tests plus 16 H4 cases pass. No paid inference, remote mutation or deployment. See H4_REVIEW.md.
+
+
+## 2026-10-27 — H4 owner evidence and stale-heading fix
+
+Recorded owner Mac 73-test pass and successful live $2.00 / $1.75 / unknown-target scenarios. Preserved the observed provider timeout and unchanged successful manual retry; no cause or reliability claim. Fixed stale decision heading during edits, loading and failed reevaluation. Local follow-up only; publication review pending.

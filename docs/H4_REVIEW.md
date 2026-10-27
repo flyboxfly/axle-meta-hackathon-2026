@@ -29,3 +29,14 @@ ACCEPT remains supplied economic/schedule checks only, with no booking or legal 
 Changes: schemas.py nullable benchmark figures/source; economics.py explicit target argument; web.py separate confirmed benchmark validation/captured authority; carrier.html compact control/provenance/comparison; tests/test_h4.py; README and build/test/review documentation. No dependency changes. Review the staged local diff with `git diff --cached`; no commit or remote branch has been created.
 
 Owner approval is required before pushing a feature branch and opening a draft PR, per the supplied handoff. No merge or deployment authorization is implied.
+
+
+## Owner live verification and UI follow-up — October 27, 2026
+
+Owner Mac: 73 passed in 2.55s on published H4 head 0504803869f1336fce58b821ea3f3c0d44ad2410. Owner supplied desktop Chrome screenshots showing complete synthetic $420 / 180 loaded / 60 additional-mile opportunity: confirmed $2.00 target → NEGOTIATE, $60 gap; confirmed $1.75 → ACCEPT, $0 gap; unknown target → NEED_MORE_INFORMATION, unknown gap. Costs remained $290 and estimated operating surplus after allocated costs $130 in all three successful cases. Each successful result displayed Muse Spark 1.3 and executed_and_validated tool evidence. These are owner-executed calls, not assistant-paid inference.
+
+The first $1.75 reevaluation failed with provider_timeout, status=None and HTTP 502. An unchanged manual retry succeeded. This establishes observed recovery, not a diagnosed cause, reliability rate or timeout fix. No retry/timeout policy changed. Owner reported stopping the server after the unknown-target test.
+
+Screenshots also exposed a stale previous decision heading after input edits. Local follow-up replaces the heading on input change, request start and request failure, while keeping prior successful evaluation only for subsequent comparison. This presentation fix does not change calculations or inference behavior. Owner desktop portions inspected without apparent clipping; mobile, physical-device and broader accessibility QA remain pending. Screenshot-to-benchmark H4 integration has not been live-tested.
+
+Follow-up validation: 73 offline tests pass in 1.44s. Scratch jsdom checks confirm neutral headings replace the prior decision during edits, pending fetch and generic failed response, with result figures hidden. Existing benchmark payload/confirmation/comparison/unknown checks also pass. JavaScript syntax and diff whitespace checks pass. These DOM checks are not rendered visual verification; no new paid calls were made.
