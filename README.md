@@ -1,4 +1,4 @@
-# Axle × Meta — H1
+# Axle × Meta — H2 local prototype
 
 Standalone hackathon implementation begun October 26, 2026. Built by a carrier, for carriers.
 
@@ -6,7 +6,7 @@ Standalone hackathon implementation begun October 26, 2026. Built by a carrier, 
 
 Axle's concept, brand, industry expertise, and production infrastructure predate this competition. This repository was written fresh for the competition; no production repository was cloned or read to implement it. FastAPI, Pydantic, HTTPX, OpenAI SDK, pytest, and their dependencies are third-party software, not original competition work.
 
-Implemented: authenticated synthetic freight evaluation, decimal calculations, OpenAPI schema, bounded Responses API tool harness, offline tests. No native Muse/Meta connector, booking, production database, carrier data ingestion, or deployed service is claimed. A successful live Meta API tool run was executed by the owner on Mac and its output supplied in chat; see the verification record. Hosted model invocation is disabled. This H1 code is for loopback development; public deployment needs quotas, rate limiting, and further security review.
+Implemented: authenticated synthetic freight evaluation, decimal calculations, OpenAPI schema, bounded Responses API tool harness, offline tests. No native Muse/Meta connector, booking, production database, carrier data ingestion, or deployed service is claimed. A successful live Meta API tool run was executed by the owner on Mac and its output supplied in chat; see the verification record. H2 adds a protected local browser workflow with real model delegation and canonical result presentation. The original agent route remains disabled. Public deployment requires a separate security design and approval.
 
 ## Local setup
 
@@ -47,3 +47,19 @@ Equipment categories stay distinct; only the synthetic box-truck profile current
 ## Verification
 
 See docs/TEST_RESULTS.md and docs/HACKATHON_COMPLIANCE.md. Offline fake-model tests verify protocol behavior only. The owner supplied successful live Meta delegation evidence on 2026-10-26. Local H1 proof passes. This is the standalone public competition repository.
+
+## H2 local carrier interface
+
+Start the same server with both `MODEL_API_KEY` and `AXLE_DEMO_TOKEN` present in its shell, then open http://127.0.0.1:8000 . Browser sign-in: username `carrier`, password is your existing local demo token. Keep this token private; enter it only in the browser's local authentication dialog. No token is embedded in HTML or JavaScript. Use the Python.org Python installation on Mac; no Homebrew installation is needed. Existing `.venv-h1` users can activate it and run `python -m pip install --no-deps -e .` after updating the source.
+
+1. Submit the prefilled synthetic $420 / 180 loaded / 60 additional mile example.
+2. Expect missing information, $1.75 all-mile RPM, $2.33 loaded RPM, and a $60 revenue gap.
+3. Open **Add costs & schedule**. For a clearly synthetic complete example enter diesel 4, MPG 10, tolls 20, driver cost 80, maintenance 0.10/mile, equipment 50, insurance 20, hours 6, schedule Yes.
+4. Reevaluate: expected estimated costs $290, operating surplus $130, NEGOTIATE.
+5. Change confirmed synthetic payout to $500 and reevaluate: expected ACCEPT, with the stated economic/schedule limitations.
+
+Every submission makes live, billable Meta requests. There is no offline success mode in the interface. Credentials remain server-side; the browser uses HTTP Basic authentication over loopback only. Host, client address and Origin are checked; do not expose this service through a tunnel, proxy, public bind address, or public deployment. Limits: one concurrent browser evaluation, four attempts per minute per process, one executed tool per request, existing bounded model turns/output, 20-second SDK request timeout, no retries. Restarting resets the local limiter. This is not a public judge-demo security design.
+
+The browser submits explicit structured facts with a short intent. Muse selects the freight tool; delegated inputs must equal confirmed facts exactly. The tool invokes the same deterministic evaluator in process (H1 CLI retains its HTTP path). Model prose is not displayed: concise decision copy and figures come from canonical results. No shared conversation history is stored. Reevaluation resubmits the full form. Previous result comparison is browser-local. Costs stay unknown when blank. Other equipment choices require a matching profile and cannot pass acceptance.
+
+The original `/api/v1/agent` remains disabled. H2 uses the separately protected `/api/v1/browser/evaluate`. The owner completed the three live browser scenarios on Mac on October 26, 2026; see docs/TEST_RESULTS.md. Two earlier failures remain undiagnosed. Offline tests do not establish live reliability.

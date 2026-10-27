@@ -24,3 +24,25 @@ Native connector: **NOT IMPLEMENTED**.
 H1 local functional acceptance: **PASS based on local tests and owner-supplied live evidence; public source publication performed separately after owner approval**.
 
 Additional checks: actual loopback TCP server health/evaluation PASS; installed SDK initialization/Responses method PASS; pip check reports no broken requirements. A missing SOCKS proxy dependency found during SDK initialization was added before final verification. No outbound inference request was made.
+
+## H2 owner-executed live verification — October 26, 2026
+
+Owner reported 21 passing tests in 1.11 seconds on Mac. Screenshots supplied in this conversation show the browser progression using Muse Spark 1.3:
+
+| Supplied scenario | Decision | All-mile RPM | Loaded RPM | Revenue gap | Estimated costs | Estimated operating surplus after allocated costs |
+| --- | --- | --- | --- | --- | --- | --- |
+| $420, 180 loaded + 60 additional miles, costs/schedule unknown | NEED_MORE_INFORMATION | $1.75 | $2.33 | $60 | unknown | unknown |
+| Same opportunity; complete synthetic costs and feasible schedule | NEGOTIATE | $1.75 | $2.33 | $60 | $290 | $130 |
+| Payout changed to $500; other facts retained | ACCEPT | $2.08 | $2.78 | $0 | $290 | $210 |
+
+Expanded evidence in negotiation and acceptance screenshots identifies model `muse-spark-1.3`, tool `evaluate_freight_opportunity`, and status `executed_and_validated`. These are owner-supplied live execution records, not paid requests from the assistant workspace. Desktop rendering was visually inspected through owner screenshots; mobile rendering remains unverified. Owner reports local server stopped after verification.
+
+Two earlier browser attempts displayed a generic delegation failure. A separate owner-executed direct diagnostic returned PASS: NEED_MORE_INFORMATION. No failing exception category was captured before later browser success; root cause remains unknown. Success after diagnostic instrumentation is not proof the instrumentation fixed the issue. No reliability rate or comprehensive live acceptance is claimed.
+
+Follow-up local change replaces broad exception-text debugging with bounded server-side failure categories and numeric provider status only. Provider responses, arbitrary exception text, credentials and submitted facts are not logged. Offline tests verify this redaction. No automatic paid retries or timeout changes were introduced.
+
+## H2 diagnostic verification and final candidate — October 27, 2026
+
+Owner applied the safe diagnostic update, reported 21 passed in 1.49s, added three diagnostic regression cases, then reported **24 passed in 1.54s**. These cases confirm ValueError, RuntimeError and unexpected failures log a fixed category without the private exception text. Mac tests use a separate test_diagnostics.py; candidate tests consolidate those cases in test_h2.py. Exact Mac/candidate tree equality is not established. Diagnostics were verified offline, not by deliberately provoking a paid provider failure. Earlier live failures remain undiagnosed.
+
+Final candidate: 24 offline cases rerun in the assistant workspace on October 27. No additional paid request made. See H2_REVIEW.md for the publication scope and remaining checks.
