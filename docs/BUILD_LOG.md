@@ -1,5 +1,16 @@
 # Build log
 
+## 2026-10-27 — H5 combined workflow and timeout localization
+
+Verified merged main 4491d4a; isolated H5 branch; 73 baseline tests pass. Owner
+completed extraction and $2.00 personalized evaluation after one timeout/manual
+retry. Subsequent $1.75 adjustment timed out. Paused paid testing and added only
+failure-stage/count/timing diagnostics to existing model requests, preserving
+original exceptions and all request/retry/success behavior. 75 offline tests pass,
+including injected timeouts before and after validated tool execution. See
+H5_REVIEW.md for evidence, limits and remaining acceptance steps. Local candidate
+only; no paid inference, publication or deployment from assistant workspace.
+
 ## 2026-10-26 — H1 local implementation
 
 Owner authorized proceeding with H1 after reviewing scope. Fresh directory created, dependencies installed in an isolated virtual environment. Implemented input/output schemas, synthetic server-owned benchmark, decimal evaluator, fail-closed bearer authentication, capability/health routes, and Meta Responses API CLI harness. Model calls are bounded; arbitrary tool names and invalid inputs fail closed.

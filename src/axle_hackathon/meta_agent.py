@@ -1,6 +1,8 @@
 """Run with python -m axle_hackathon.meta_agent. Never logs credentials or reasoning."""
 import json
+import logging
 import os
+import time
 from typing import Callable
 from .schemas import Evaluation, Opportunity
 
@@ -18,11 +20,22 @@ Explain missing information and give the next useful question. No independent ar
 
 
 def delegate(client, message: str, execute: Callable[[Opportunity], Evaluation]) -> dict:
-    response = client.responses.create(model=MODEL, instructions=INSTRUCTIONS,
-        input=message, tools=[TOOL], max_output_tokens=2000)
     trace = []
     evaluations = []
-    for _ in range(3):
+    def request(stage, turn, **kwargs):
+        started = time.monotonic()
+        try:
+            return client.responses.create(**kwargs)
+        except Exception:
+            # Fixed labels/counts/timing only. Preserve the original exception so
+            # the browser boundary still categorizes it and fails closed.
+            logging.getLogger(__name__).warning(
+                "Axle model request failed stage=%s turn=%s validated_evaluations=%s elapsed_ms=%s",
+                stage, turn, len(evaluations), int((time.monotonic() - started) * 1000))
+            raise
+    response = request("tool_selection", 1, model=MODEL, instructions=INSTRUCTIONS,
+        input=message, tools=[TOOL], max_output_tokens=2000)
+    for turn in range(3):
         calls = [item for item in response.output if item.type == "function_call"]
         if not calls:
             if not evaluations:
@@ -43,7 +56,7 @@ def delegate(client, message: str, execute: Callable[[Opportunity], Evaluation])
                           "tool": call.name, "status": "executed_and_validated"})
             outputs.append({"type": "function_call_output", "call_id": call.call_id,
                             "output": result.model_dump_json()})
-        response = client.responses.create(model=MODEL, instructions=INSTRUCTIONS,
+        response = request("after_tool", turn + 2, model=MODEL, instructions=INSTRUCTIONS,
             previous_response_id=response.id, input=outputs, tools=[TOOL], max_output_tokens=2000)
     raise RuntimeError("Delegation turn budget exceeded")
 
