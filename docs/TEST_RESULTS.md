@@ -135,3 +135,14 @@ delegation or native connector proof follows from this test.
 real in-process FastAPI HTTP handlers; no live SDK wire/model/round-trip proof.
 Checks exact facts, bounded calls, result linkage, HTTP and follow-up failures,
 redaction and preserved browser/CLI behavior. See H7_REVIEW.md.
+
+## H7 owner live external round-trip verification
+
+Owner Mac on d842e32: 121 passed in 2.60s. Owner supplied successful real
+Muse Spark 1.3 selection → loopback HTTP axleAPI 200 → canonical result submitted
+→ completed follow-up. NEGOTIATE, target 2.00, gap 60.00, costs 290.00, estimated
+operating surplus after allocated costs 130.00. No model prose validation claimed.
+Initial lowercase confirmation cancelled without requests; subsequent confirmed
+run succeeded. Server 47922 stopped cleanly. IDs and limits in H7_REVIEW.md.
+This is owner-executed live evidence; native integration and repeated reliability
+remain unverified. No assistant paid inference or remote deployment.

@@ -116,3 +116,11 @@ for model selection → exact-fact HTTP axleAPI → canonical result sent to mod
 completed follow-up. Benchmark/confirmation authority stays outside model schema.
 121 offline tests passed in 1.77s; no paid inference or slice 2 publication.
 Owner approval required before updating draft PR #6.
+
+## 2026-10-27 — H7 owner live round-trip evidence
+
+Owner synchronized d842e32: 121 Mac tests passed in 2.60s. Confirmed live external
+HTTP tool execution and completed Meta follow-up with correct canonical results.
+Recorded the no-request lowercase cancellation separately. Server 47922 cleanly
+stopped. Evidence-only local follow-up; approval needed before PR #6 update.
+Native connector, remote deployment and repeated-run reliability remain open.

@@ -145,3 +145,13 @@ CONFIRM of the displayed synthetic case. Up to two paid requests, no automatic
 retry. Success requires completed follow-up; failure never becomes partial success.
 No native Muse connector is claimed; model prose is not validated or displayed.
 See H7_REVIEW.md before running. Browser behavior is unchanged.
+
+### H7 owner live verification
+
+On published d842e32, owner Mac reported 121 passing tests and demonstrated a
+real Muse Spark 1.3 tool selection → loopback HTTP axleAPI → canonical result
+return → completed model follow-up. Result: NEGOTIATE, $60 gap, $290 costs and
+$130 estimated operating surplus after allocated costs. Model prose was not
+validated or displayed. This later evidence supersedes earlier pending local
+round-trip statements; remote/native integration and repeated reliability remain
+unverified. See H7_REVIEW.md. Server stopped cleanly after verification.

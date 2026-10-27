@@ -131,3 +131,39 @@ No new API parameters or provider introduced.
 
 Publication proposal: append these changes plus owner slice 1 evidence to draft
 PR #6 after owner approval. No merge/deployment requested by this candidate.
+
+## Owner live external round trip — October 27, 2026
+
+Owner synchronized published d842e32 and reported 121 passed in 2.60s on Mac.
+Server 47896 was stopped; both credentials were present in the original shell,
+and server 47922 restarted in the background. Credential values were not shared.
+An initial lowercase confirm cancelled before any request. Owner reran with
+the required uppercase confirmation and supplied the following successful output.
+
+- GET /api/health: HTTP 200.
+- POST /api/v1/axle/evaluate: HTTP 200.
+- Model: muse-spark-1.3.
+- Tool selection response: resp_6ae11ffc496db99a3ba047ff.
+- Final response: resp_6ae120083ad76dd314ce4824.
+- Call: call_282fa9e3-938c-491e-a08f-6e5bf7d2a139.
+- Harness status: round_trip_completed; transport: loopback_http.
+- tool_result_submitted=true; final_text_present=true.
+- model_prose_validated=false; native_connector=false.
+- Canonical result: NEGOTIATE; 240 miles; loaded RPM 2.33; all-mile RPM 1.75;
+  carrier_confirmed target 2.00; target revenue 480.00; gap 60.00; costs 290.00;
+  estimated operating surplus after allocated costs 130.00; no missing facts.
+- Result provenance: manual, caller_assertion, canonical_api; model_invoked=false
+  describes Axle's deterministic service, not the harness's two Meta requests.
+
+Owner supplied clean shutdown output for process 47922. Server is stopped.
+This verifies one owner-executed live model-selected external HTTP delegation and
+completed result-return follow-up on d842e32. It is not assistant-paid inference,
+native Muse consumer-agent integration, a reliability rate, verified model prose,
+measured latency, remote hosting or real-carrier validation. Earlier synthetic
+TCP-only evidence remains separate. No live retry was required after submission
+in the supplied sequence; the earlier cancelled prompt made no requests.
+
+Current evidence follow-up changes documentation only and is local pending owner
+approval to update draft PR #6. H7 local contract and live round-trip acceptance
+are verified; full H7 connector/remote readiness remains open. No merge or
+deployment has been authorized.
