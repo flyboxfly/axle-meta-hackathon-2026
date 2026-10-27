@@ -102,3 +102,14 @@ Owner Mac diagnostic-only head 25fd9f0: 75 passed in 2.36s. Owner subsequent liv
 failure reported stage=after_tool, turn=2, validated_evaluations=1, elapsed_ms=20011,
 provider_timeout, HTTP 502. This locates one failure but does not prove root cause
 or locate earlier failures. Follow-up candidate not yet live-tested or published.
+
+## H6 fresh-page owner rehearsal — October 27, 2026
+
+On merged a0f82ec, owner screenshots verify fresh page, new synthetic extraction,
+complete-cost $2.00 NEGOTIATE ($60 gap), then target-only $1.75 ACCEPT ($0 gap),
+unchanged $290 costs/$130 estimated operating surplus and correct comparison.
+Expanded ACCEPT evidence shows executed_and_validated, canonical_ui and
+model_received_result=false. Server 46588 cleanly stopped afterward.
+Core fresh-page acceptance passes; repeated reliability and exact attempt count
+are not established. No new offline suite pass claimed: latest owner baseline
+is 93 passed in 2.54s; assistant H6 runtime lacks pytest. See H6_REVIEW.md.

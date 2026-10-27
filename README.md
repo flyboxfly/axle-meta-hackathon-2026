@@ -1,6 +1,15 @@
-# Axle × Meta — H3 local prototype
+# Axle × Meta — local freight prototype
 
-## H5 browser completion (review candidate)
+## H6 fresh-page rehearsal
+
+Owner screenshots on merged main a0f82ec verify fresh-page screenshot extraction,
+confirmed $2.00 NEGOTIATE → target-only $1.75 ACCEPT, unchanged $290 estimated
+costs/$130 estimated operating surplus, and canonical delivery trace. This closes
+the specific fresh-page gap below, not repeated-run reliability. See
+[H6 review](docs/H6_REVIEW.md) and the updated [demo plan](docs/DEMO_PLAN.md).
+H6 changes documentation only; final recording and judge access remain pending.
+
+## H5 browser completion (historical verification)
 
 The browser now requests one completed model-selected freight tool call, validates
 its arguments against confirmed carrier facts, and executes Axle's deterministic
