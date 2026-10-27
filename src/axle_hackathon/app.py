@@ -39,3 +39,22 @@ def agent_route(request: AgentRequest):
 # Separate local browser boundary; the H1 bearer API and CLI remain available.
 from .web import router
 app.include_router(router)
+
+# New external-client contract is a local preview until remote access is reviewed.
+from .axle_api import (AxleEvaluationRequest, AxleEvaluationResponse,
+                       evaluate_for_client, local_api_access)
+
+
+@app.post("/api/v1/axle/evaluate", response_model=AxleEvaluationResponse,
+          operation_id="evaluate_confirmed_freight_opportunity",
+          dependencies=[Depends(authorize), Depends(local_api_access)])
+def axle_evaluate_route(body: AxleEvaluationRequest):
+    """Evaluate confirmed synthetic freight facts; no booking, storage or model call.
+
+    Caller must obtain carrier review before asserting confirmation. Confirmation
+    is a caller assertion, not independently verified consent or identity.
+    Unknown costs and explicitly unknown revenue targets remain unknown.
+    """
+    from fastapi.responses import JSONResponse
+    return JSONResponse(evaluate_for_client(body).model_dump(mode="json"),
+                        headers={"Cache-Control": "no-store"})

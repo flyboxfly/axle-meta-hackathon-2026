@@ -113,3 +113,9 @@ model_received_result=false. Server 46588 cleanly stopped afterward.
 Core fresh-page acceptance passes; repeated reliability and exact attempt count
 are not established. No new offline suite pass claimed: latest owner baseline
 is 93 passed in 2.54s; assistant H6 runtime lacks pytest. See H6_REVIEW.md.
+
+## H7 slice 1 — assistant offline validation
+
+107 passed in 1.73s on isolated a0bbbb0-based worktree: 93 existing tests and 14
+H7 cases. In-process HTTP-handler tests only; no live model, separate TCP client,
+Mac candidate run, native connector or deployment claimed. See H7_REVIEW.md.

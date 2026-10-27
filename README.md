@@ -120,3 +120,18 @@ The authenticated browser request carries `benchmark` separately from `opportuni
 Compatibility: H1 API/CLI and older browser requests omitting `benchmark` retain the explicitly labeled $2.00 synthetic default. The new browser always sends an explicit confirmed choice, including null for unknown. Confirmation is an authenticated assertion, not independent verification. The synthetic equipment/profile restriction remains.
 
 Owner verification after approved publication and checkout: run `python -m pytest -q`, start the usual loopback server, then use the complete $420 / 240-mile / $290-cost example above. Confirm $2.00/mile: NEGOTIATE, target $480, gap $60. Change only target to $1.75, reconfirm and reevaluate: ACCEPT, target $420, gap $0. Choose unknown, confirm and reevaluate: NEED_MORE_INFORMATION, unknown target/gap, unchanged $290 costs and $130 surplus. Each evaluation is billable; pause if the shared local limit is reached. For screenshot testing, confirm the target choice before the final screenshot confirmation.
+
+## H7 axleAPI local preview (unpublished candidate)
+
+`POST /api/v1/axle/evaluate` adds a confirmed external-client contract without
+invoking a model. Supply `opportunity`, required `benchmark` with
+`target_all_mile_rpm` (decimal string or null) and `confirmed: true`, plus
+`facts_confirmed: true` and `source: "manual"` or `"screenshot"`.
+Use the existing local bearer token. Only loopback use is supported.
+
+Returns canonical `evaluation`, field-linked `next_questions`, schema version,
+source and explicit caller-assertion/delivery provenance. Null target remains
+unknown; no synthetic default is silently applied on this new route. Existing
+routes retain their behavior. Only the synthetic box-truck profile is supported.
+See [H7 review](docs/H7_REVIEW.md) for tests, authority and remaining remote work.
+This endpoint alone is not native Muse integration or a demonstrated agent round trip.
