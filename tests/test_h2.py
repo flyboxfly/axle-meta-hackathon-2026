@@ -83,3 +83,11 @@ def test_diagnostics_exclude_exception_text(browser,monkeypatch,caplog,kind,cate
     assert response.status_code==502
     assert category in caplog.text
     assert 'secret-provider-body-and-token' not in caplog.text + response.text
+
+
+def test_non_ascii_incorrect_password_is_unauthorized(browser):
+    import base64
+    authorization = "Basic " + base64.b64encode("carrier:wrongé".encode("utf-8")).decode("ascii")
+    response = browser.get("/", headers={"Authorization": authorization}, auth=None)
+    assert response.status_code == 401
+    assert "Basic" in response.headers["www-authenticate"]

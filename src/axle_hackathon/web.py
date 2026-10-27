@@ -37,7 +37,7 @@ def local_access(request: Request):
     try:
         scheme, value = request.headers.get("authorization", "").split(" ", 1)
         user, password = base64.b64decode(value, validate=True).decode().split(":", 1)
-        valid = scheme.lower() == "basic" and user == "carrier" and secrets.compare_digest(password, token)
+        valid = scheme.lower() == "basic" and user == "carrier" and secrets.compare_digest(password.encode("utf-8"), token.encode("utf-8"))
     except (ValueError, UnicodeError):
         valid = False
     if not valid:
