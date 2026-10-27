@@ -1,5 +1,38 @@
 # Build log
 
+## 2026-10-27 — H5 owner browser-completion verification
+
+Approved browser follow-up published as eddfdbb in draft PR #4; nine files matched
+the tested candidate. Owner Mac reported 93 passed in 3.00s. Owner screenshots
+confirm successful $1.75 ACCEPT and unknown-target NEED_MORE_INFORMATION on preserved
+screenshot-derived inputs, unchanged costs/surplus and explicit canonical-UI trace.
+Recorded pre-submission confirmation friction separately from model failures.
+Fresh-page extraction/$2.00 rerun and repeated reliability remain unverified. This
+local evidence update changes documentation only; no new paid calls or publication.
+
+## 2026-10-27 — H5 browser canonical completion candidate
+
+Owner tested published diagnostic head 25fd9f0 (75 Mac tests pass). New evidence
+locates a timeout after one validated evaluation in model request 2 (20011 ms).
+Prepared follow-up locally from that published head: browser finishes after one
+completed model-selected tool call and validated canonical evaluation; trace
+explicitly says model did not receive result. CLI retains full follow-up loop.
+No model parameters, timeout/retry policy, authority or HTML change. Rechecked
+official Meta tool/Responses docs; 93 offline tests pass. Live candidate validation
+and owner approval to update draft PR #4 remain pending. No paid inference,
+publication, merge or deployment performed for this follow-up.
+
+## 2026-10-27 — H5 combined workflow and timeout localization
+
+Verified merged main 4491d4a; isolated H5 branch; 73 baseline tests pass. Owner
+completed extraction and $2.00 personalized evaluation after one timeout/manual
+retry. Subsequent $1.75 adjustment timed out. Paused paid testing and added only
+failure-stage/count/timing diagnostics to existing model requests, preserving
+original exceptions and all request/retry/success behavior. 75 offline tests pass,
+including injected timeouts before and after validated tool execution. See
+H5_REVIEW.md for evidence, limits and remaining acceptance steps. Local candidate
+only; no paid inference, publication or deployment from assistant workspace.
+
 ## 2026-10-26 — H1 local implementation
 
 Owner authorized proceeding with H1 after reviewing scope. Fresh directory created, dependencies installed in an isolated virtual environment. Implemented input/output schemas, synthetic server-owned benchmark, decimal evaluator, fail-closed bearer authentication, capability/health routes, and Meta Responses API CLI harness. Model calls are bounded; arbitrary tool names and invalid inputs fail closed.

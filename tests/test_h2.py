@@ -27,7 +27,7 @@ def fake_client(monkeypatch, mutate=False):
             if self.count==1:
                 facts=json.loads(kw['input'].split('\n')[-1])
                 if mutate: facts['payout']='999'
-                return NS(id='offline-call',output=[NS(type='function_call',name='evaluate_freight_opportunity',arguments=json.dumps(facts),call_id='offline-tool')])
+                return NS(id='offline-call',status='completed',output=[NS(type='function_call',status='completed',name='evaluate_freight_opportunity',arguments=json.dumps(facts),call_id='offline-tool')])
             return NS(id='offline-final',output=[],output_text='Ignored model prose',usage=None)
     monkeypatch.setenv('MODEL_API_KEY','offline-placeholder')
     monkeypatch.setattr('openai.OpenAI',Client)

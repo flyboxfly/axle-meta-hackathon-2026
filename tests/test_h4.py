@@ -56,7 +56,7 @@ def test_model_cannot_override_benchmark(browser, monkeypatch):
         def create(self, **kwargs):
             facts = json.loads(kwargs['input'].split('\n')[-1])
             facts['target_all_mile_rpm'] = '0.01'
-            return NS(id='fake', output=[NS(type='function_call', name='evaluate_freight_opportunity',
+            return NS(id='fake', status='completed', output=[NS(type='function_call', status='completed', name='evaluate_freight_opportunity',
                 arguments=json.dumps(facts), call_id='fake-tool')])
     monkeypatch.setenv('MODEL_API_KEY', 'offline')
     monkeypatch.setattr('openai.OpenAI', Client)

@@ -1,6 +1,8 @@
 """Run with python -m axle_hackathon.meta_agent. Never logs credentials or reasoning."""
 import json
+import logging
 import os
+import time
 from typing import Callable
 from .schemas import Evaluation, Opportunity
 
@@ -17,12 +19,58 @@ Do not claim native Muse integration, booking, profitability, or verified legal 
 Explain missing information and give the next useful question. No independent arithmetic."""
 
 
+def delegate_for_browser(client, message: str, execute: Callable[[Opportunity], Evaluation]) -> dict:
+    """One completed model-selected call, then canonical UI delivery.
+
+    This is not a model-authored final answer or a completed tool-result round trip.
+    The browser intentionally does not send the calculation back to the model.
+    """
+    started = time.monotonic()
+    try:
+        response = client.responses.create(model=MODEL, instructions=INSTRUCTIONS,
+            input=message, tools=[TOOL], max_output_tokens=2000)
+    except Exception:
+        logging.getLogger(__name__).warning(
+            "Axle model request failed stage=tool_selection turn=1 validated_evaluations=0 elapsed_ms=%s",
+            int((time.monotonic() - started) * 1000))
+        raise
+    if response.status != "completed":
+        raise RuntimeError("Model tool selection did not complete")
+    calls = [item for item in response.output if item.type == "function_call"]
+    if len(calls) != 1:
+        raise RuntimeError("Expected exactly one completed model-selected tool call")
+    call = calls[0]
+    if call.status != "completed":
+        raise RuntimeError("Model tool call did not complete")
+    if call.name != TOOL["name"]:
+        raise ValueError("Unrecognized tool")
+    op = Opportunity.model_validate_json(call.arguments)
+    result = Evaluation.model_validate(execute(op))
+    return {"model": MODEL, "response_id": response.id,
+            "evaluations": [result.model_dump()],
+            "trace": [{"response_id": response.id, "call_id": call.call_id,
+                       "tool": call.name, "status": "executed_and_validated",
+                       "result_delivery": "canonical_ui",
+                       "model_received_result": False}]}
+
+
 def delegate(client, message: str, execute: Callable[[Opportunity], Evaluation]) -> dict:
-    response = client.responses.create(model=MODEL, instructions=INSTRUCTIONS,
-        input=message, tools=[TOOL], max_output_tokens=2000)
     trace = []
     evaluations = []
-    for _ in range(3):
+    def request(stage, turn, **kwargs):
+        started = time.monotonic()
+        try:
+            return client.responses.create(**kwargs)
+        except Exception:
+            # Fixed labels/counts/timing only. Preserve the original exception so
+            # the browser boundary still categorizes it and fails closed.
+            logging.getLogger(__name__).warning(
+                "Axle model request failed stage=%s turn=%s validated_evaluations=%s elapsed_ms=%s",
+                stage, turn, len(evaluations), int((time.monotonic() - started) * 1000))
+            raise
+    response = request("tool_selection", 1, model=MODEL, instructions=INSTRUCTIONS,
+        input=message, tools=[TOOL], max_output_tokens=2000)
+    for turn in range(3):
         calls = [item for item in response.output if item.type == "function_call"]
         if not calls:
             if not evaluations:
@@ -43,7 +91,7 @@ def delegate(client, message: str, execute: Callable[[Opportunity], Evaluation])
                           "tool": call.name, "status": "executed_and_validated"})
             outputs.append({"type": "function_call_output", "call_id": call.call_id,
                             "output": result.model_dump_json()})
-        response = client.responses.create(model=MODEL, instructions=INSTRUCTIONS,
+        response = request("after_tool", turn + 2, model=MODEL, instructions=INSTRUCTIONS,
             previous_response_id=response.id, input=outputs, tools=[TOOL], max_output_tokens=2000)
     raise RuntimeError("Delegation turn budget exceeded")
 
