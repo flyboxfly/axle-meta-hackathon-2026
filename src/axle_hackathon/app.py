@@ -35,3 +35,7 @@ def evaluate_route(opportunity: Opportunity):
 def agent_route(request: AgentRequest):
     # H1 harness only: no public paid-model endpoint until quotas/rate limiting exist.
     raise HTTPException(501, "Use the local CLI delegation harness; hosted model invocation is not enabled")
+
+# Separate local browser boundary; the H1 bearer API and CLI remain available.
+from .web import router
+app.include_router(router)

@@ -6,3 +6,7 @@ __pycache__/
 .pytest_cache/
 *.egg-info/
 evidence/
+
+# Local Mac environments and diagnostic backups
+.venv-*/
+*.py.before-diagnostics
