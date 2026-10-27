@@ -119,3 +119,19 @@ is 93 passed in 2.54s; assistant H6 runtime lacks pytest. See H6_REVIEW.md.
 107 passed in 1.73s on isolated a0bbbb0-based worktree: 93 existing tests and 14
 H7 cases. In-process HTTP-handler tests only; no live model, separate TCP client,
 Mac candidate run, native connector or deployment claimed. See H7_REVIEW.md.
+
+## H7 owner Mac and separate-client evidence
+
+Owner reported 107 passed in 2.83s on feature/h7-axle-api, then verified all three
+$2.00/$1.75/unknown target scenarios from a separate Terminal client over loopback
+HTTP. Canonical delivery and no model invocation were asserted; costs/surplus
+remained $290/$130. Unknown target returned the expected next question.
+Server process 47730 cleanly stopped. See H7_REVIEW.md. No live external model
+delegation or native connector proof follows from this test.
+
+## H7 external delegation candidate — assistant offline
+
+121 passed in 1.77s (107 prior + 14 harness cases). Fake model transport with
+real in-process FastAPI HTTP handlers; no live SDK wire/model/round-trip proof.
+Checks exact facts, bounded calls, result linkage, HTTP and follow-up failures,
+redaction and preserved browser/CLI behavior. See H7_REVIEW.md.

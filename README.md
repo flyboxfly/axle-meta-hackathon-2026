@@ -135,3 +135,13 @@ unknown; no synthetic default is silently applied on this new route. Existing
 routes retain their behavior. Only the synthetic box-truck profile is supported.
 See [H7 review](docs/H7_REVIEW.md) for tests, authority and remaining remote work.
 This endpoint alone is not native Muse integration or a demonstrated agent round trip.
+
+### H7 external delegation harness (local follow-up candidate)
+
+`python -m axle_hackathon.external_agent` tests model-selected delegation through
+the new loopback HTTP API, followed by sending the canonical result back to the
+model. Requires both existing credentials, running local server, and explicit
+CONFIRM of the displayed synthetic case. Up to two paid requests, no automatic
+retry. Success requires completed follow-up; failure never becomes partial success.
+No native Muse connector is claimed; model prose is not validated or displayed.
+See H7_REVIEW.md before running. Browser behavior is unchanged.
