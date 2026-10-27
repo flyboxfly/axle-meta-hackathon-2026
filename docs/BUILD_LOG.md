@@ -1,5 +1,15 @@
 # Build log
 
+## 2026-10-27 — H5 owner browser-completion verification
+
+Approved browser follow-up published as eddfdbb in draft PR #4; nine files matched
+the tested candidate. Owner Mac reported 93 passed in 3.00s. Owner screenshots
+confirm successful $1.75 ACCEPT and unknown-target NEED_MORE_INFORMATION on preserved
+screenshot-derived inputs, unchanged costs/surplus and explicit canonical-UI trace.
+Recorded pre-submission confirmation friction separately from model failures.
+Fresh-page extraction/$2.00 rerun and repeated reliability remain unverified. This
+local evidence update changes documentation only; no new paid calls or publication.
+
 ## 2026-10-27 — H5 browser canonical completion candidate
 
 Owner tested published diagnostic head 25fd9f0 (75 Mac tests pass). New evidence

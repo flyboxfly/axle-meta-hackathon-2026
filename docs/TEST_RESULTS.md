@@ -81,7 +81,16 @@ Owner Mac: 73 passed in 2.55s on published H4 head 0504803869f1336fce58b821ea3f3
 The first $1.75 reevaluation failed with provider_timeout, status=None and HTTP 502. An unchanged manual retry succeeded. This establishes observed recovery, not a diagnosed cause, reliability rate or timeout fix. No retry/timeout policy changed. Owner reported stopping the server after the unknown-target test.
 
 Screenshots also exposed a stale previous decision heading after input edits. Local follow-up replaces the heading on input change, request start and request failure, while keeping prior successful evaluation only for subsequent comparison. This presentation fix does not change calculations or inference behavior. Owner desktop portions inspected without apparent clipping; mobile, physical-device and broader accessibility QA remain pending. Screenshot-to-benchmark H4 integration has not been live-tested.
-# H5 follow-up candidate — October 27, 2026
+## H5 browser completion verification — October 27, 2026
+
+Subsequent owner verification: published eddfdbb passed 93 tests in 3.00s on Mac.
+Supplied 14:02:57 and 14:12:29 screenshots show successful live confirmed $1.75
+ACCEPT and unknown-target NEED_MORE_INFORMATION using preserved screenshot-derived
+facts; $290 costs/$130 estimated operating surplus remain unchanged. Both show
+executed_and_validated, canonical_ui, model_received_result=false. Earlier $2.00
+NEGOTIATE is retained in comparison from main; extraction/$2.00 were not rerun on
+eddfdbb. See H5_REVIEW.md for exact evidence and remaining limits. No repeated-run
+reliability rate or provider root-cause conclusion is established.
 
 93 offline tests pass in assistant workspace. Browser uses a single completed
 model-selected tool call plus validated deterministic evaluation; CLI retains its

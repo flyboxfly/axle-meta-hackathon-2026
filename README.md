@@ -19,8 +19,12 @@ calculations fail closed. Browser timeout remains 20 seconds per SDK request.
 Owner diagnostics on H5 head 25fd9f0 located one timeout in the second request,
 after one validated evaluation (20011 ms). This candidate removes that browser
 dependency; it does not establish provider root cause or repeated-run reliability.
-93 offline tests pass; candidate live validation remains pending. See
-docs/H5_REVIEW.md for the full evidence and review boundaries.
+93 offline tests pass, also confirmed on the owner's Mac at eddfdbb. Owner live
+screenshots verify $1.75 ACCEPT and unknown-target NEED_MORE_INFORMATION using
+preserved screenshot-derived facts, unchanged $290 costs/$130 estimated operating
+surplus, and explicit canonical-UI evidence. Extraction/$2.00 evaluation were
+obtained earlier on main; a fresh-page full sequence and repeated-run reliability
+remain unverified. See docs/H5_REVIEW.md for evidence and review boundaries.
 
 Standalone hackathon implementation begun October 26, 2026. Built by a carrier, for carriers.
 

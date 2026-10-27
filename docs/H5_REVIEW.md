@@ -1,5 +1,44 @@
 # H5 local review — October 27, 2026
 
+## Owner verification of published browser completion — October 27
+
+Owner approved the browser completion follow-up. Published H5 draft PR #4 head:
+eddfdbb6278f35830204b19d02db6bfe5834860e. All nine published files matched the tested
+local candidate. Owner Mac synchronized to eddfdbb and reported 93 passed in 3.00s;
+loopback server started as process 46035.
+
+Owner preserved the existing screenshot-derived form across restart. 14:00:00 and
+14:01:36 screenshots were pre-submission settings, not a paid request or failure.
+The latter shows screenshot confirmation unchecked and neutral edited-result state.
+After confirmation, 14:02:57 screenshot shows ACCEPT with confirmed $1.75 target,
+$1.75 all-mile RPM, $2.33 loaded RPM, $0 gap, $290 estimated costs and $130 estimated
+operating surplus after allocated costs. Comparison retains prior successful main
+$2.00 NEGOTIATE result ($60 gap). Expanded evidence shows Muse Spark 1.3,
+executed_and_validated, canonical_ui, model_received_result=false.
+
+14:11:28 screenshot showed disabled submission with enabled inputs during unknown
+target setup; no request/failure is established from that screenshot. Owner then
+reported completion. 14:12:29 result screenshot shows NEED_MORE_INFORMATION,
+unknown target/gap, unchanged $290 costs/$130 surplus and next question requesting
+a confirmed revenue target. Comparison is ACCEPT → NEED_MORE_INFORMATION with
+$1.75 → unknown, $0 → unknown, missing facts 0 → 1. Expanded evidence again shows
+executed_and_validated, canonical_ui and model_received_result=false.
+
+These two successful evaluations are owner-executed live evidence on eddfdbb, not
+assistant-paid calls. They validate updated selection/output compatibility and the
+preserved screenshot-derived benchmark adjustment/unknown paths. Extraction and
+$2.00 result were obtained earlier on main, not rerun on eddfdbb. Fresh-page full
+sequence, repeated-run reliability, candidate mobile/accessibility QA and broad
+extraction accuracy remain unverified. Initial request timeout is still possible;
+no provider root cause or general reliability fix is claimed. Human confirmation
+was a practical source of friction; no confirmation/reset behavior changed here.
+
+Current local follow-up after those results: evidence/documentation only; no
+additional application changes or live requests. Publication of this evidence
+record and merge remain subject to owner authorization.
+Owner supplied clean shutdown output for process 46035 after the unknown-target
+test. Server is stopped; browser state may remain but is not persisted by the app.
+
 ## Follow-up candidate after owner diagnostic test
 
 This section supersedes the diagnostic-only proposed change and test count below;
