@@ -15,7 +15,7 @@ from fastapi import APIRouter, Depends, HTTPException, Request
 from fastapi.responses import HTMLResponse
 from pydantic import BaseModel, ConfigDict, Field, model_validator
 from .economics import evaluate
-from .meta_agent import BASE_URL, MODEL, delegate
+from .meta_agent import BASE_URL, MODEL, delegate_for_browser
 from .schemas import Opportunity
 
 logger = logging.getLogger(__name__)
@@ -92,7 +92,7 @@ def live_run(body: WebRequest):
         return evaluate(op, target=body.benchmark.target_all_mile_rpm,
                         benchmark_source="carrier_confirmed" if body.benchmark.target_all_mile_rpm is not None else "carrier_unknown")
     with OpenAI(api_key=key, base_url=BASE_URL, timeout=20, max_retries=0) as client:
-        result = delegate(client, body.message + "\nConfirmed structured facts follow. Use these exactly; null means unknown.\n" + canonical.model_dump_json(), execute)
+        result = delegate_for_browser(client, body.message + "\nConfirmed structured facts follow. Use these exactly; null means unknown.\n" + canonical.model_dump_json(), execute)
     if len(result["evaluations"]) != 1:
         raise ValueError("Expected exactly one freight evaluation")
     return {"model": MODEL, "evaluation": result["evaluations"][0], "trace": result["trace"],

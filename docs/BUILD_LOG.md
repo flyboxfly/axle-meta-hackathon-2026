@@ -1,5 +1,17 @@
 # Build log
 
+## 2026-10-27 — H5 browser canonical completion candidate
+
+Owner tested published diagnostic head 25fd9f0 (75 Mac tests pass). New evidence
+locates a timeout after one validated evaluation in model request 2 (20011 ms).
+Prepared follow-up locally from that published head: browser finishes after one
+completed model-selected tool call and validated canonical evaluation; trace
+explicitly says model did not receive result. CLI retains full follow-up loop.
+No model parameters, timeout/retry policy, authority or HTML change. Rechecked
+official Meta tool/Responses docs; 93 offline tests pass. Live candidate validation
+and owner approval to update draft PR #4 remain pending. No paid inference,
+publication, merge or deployment performed for this follow-up.
+
 ## 2026-10-27 — H5 combined workflow and timeout localization
 
 Verified merged main 4491d4a; isolated H5 branch; 73 baseline tests pass. Owner

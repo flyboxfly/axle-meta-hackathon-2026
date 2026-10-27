@@ -19,6 +19,41 @@ Do not claim native Muse integration, booking, profitability, or verified legal 
 Explain missing information and give the next useful question. No independent arithmetic."""
 
 
+def delegate_for_browser(client, message: str, execute: Callable[[Opportunity], Evaluation]) -> dict:
+    """One completed model-selected call, then canonical UI delivery.
+
+    This is not a model-authored final answer or a completed tool-result round trip.
+    The browser intentionally does not send the calculation back to the model.
+    """
+    started = time.monotonic()
+    try:
+        response = client.responses.create(model=MODEL, instructions=INSTRUCTIONS,
+            input=message, tools=[TOOL], max_output_tokens=2000)
+    except Exception:
+        logging.getLogger(__name__).warning(
+            "Axle model request failed stage=tool_selection turn=1 validated_evaluations=0 elapsed_ms=%s",
+            int((time.monotonic() - started) * 1000))
+        raise
+    if response.status != "completed":
+        raise RuntimeError("Model tool selection did not complete")
+    calls = [item for item in response.output if item.type == "function_call"]
+    if len(calls) != 1:
+        raise RuntimeError("Expected exactly one completed model-selected tool call")
+    call = calls[0]
+    if call.status != "completed":
+        raise RuntimeError("Model tool call did not complete")
+    if call.name != TOOL["name"]:
+        raise ValueError("Unrecognized tool")
+    op = Opportunity.model_validate_json(call.arguments)
+    result = Evaluation.model_validate(execute(op))
+    return {"model": MODEL, "response_id": response.id,
+            "evaluations": [result.model_dump()],
+            "trace": [{"response_id": response.id, "call_id": call.call_id,
+                       "tool": call.name, "status": "executed_and_validated",
+                       "result_delivery": "canonical_ui",
+                       "model_received_result": False}]}
+
+
 def delegate(client, message: str, execute: Callable[[Opportunity], Evaluation]) -> dict:
     trace = []
     evaluations = []

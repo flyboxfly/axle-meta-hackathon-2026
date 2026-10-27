@@ -1,5 +1,27 @@
 # Axle × Meta — H3 local prototype
 
+## H5 browser completion (review candidate)
+
+The browser now requests one completed model-selected freight tool call, validates
+its arguments against confirmed carrier facts, and executes Axle's deterministic
+evaluation. It displays the canonical result directly. It does **not** send that
+result back to Muse Spark or request a model-authored final answer. Expanded
+delegation evidence records `result_delivery: canonical_ui` and
+`model_received_result: false`; its response ID identifies tool selection.
+
+This supersedes earlier descriptions of a bounded multi-turn loop for the browser.
+The H1 CLI retains the full tool-result/model-response loop. Screenshot extraction
+remains a separate request. Model selection is still required; no forced call,
+simulated success, partial-response fallback or automatic paid retry is added.
+Incomplete responses/calls, missing/multiple/unknown calls, altered facts and failed
+calculations fail closed. Browser timeout remains 20 seconds per SDK request.
+
+Owner diagnostics on H5 head 25fd9f0 located one timeout in the second request,
+after one validated evaluation (20011 ms). This candidate removes that browser
+dependency; it does not establish provider root cause or repeated-run reliability.
+93 offline tests pass; candidate live validation remains pending. See
+docs/H5_REVIEW.md for the full evidence and review boundaries.
+
 Standalone hackathon implementation begun October 26, 2026. Built by a carrier, for carriers.
 
 ## Provenance and status

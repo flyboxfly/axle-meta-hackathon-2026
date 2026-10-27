@@ -1,5 +1,59 @@
 # H5 local review — October 27, 2026
 
+## Follow-up candidate after owner diagnostic test
+
+This section supersedes the diagnostic-only proposed change and test count below;
+earlier entries preserve the sequence of evidence. Diagnostic-only head 25fd9f0
+was published with owner approval as draft PR #4, not merged. All four published
+files matched the tested local candidate. Owner Mac checked out 25fd9f0 and reported
+75 passed in 2.36s.
+
+Owner then reported `stage=after_tool turn=2 validated_evaluations=1 elapsed_ms=20011`,
+followed by provider_timeout and HTTP 502. Supplied 13:46:51 Eastern screenshot
+shows the failed $1.75 attempt; tab had not been refreshed. This evidence locates
+that request failure after calculation, not its underlying provider cause. It does
+not retroactively locate earlier timeouts. Owner reported server stopped.
+
+Prepared isolated feature/h5-browser-completion worktree from published 25fd9f0.
+Browser now uses delegate_for_browser: one existing model request, completed response,
+exactly one completed recognized function call, schema validation, existing server
+exact-fact check and deterministic evaluation/output validation. Canonical result
+returns directly to UI with selection response ID and trace fields
+`result_delivery: canonical_ui`, `model_received_result: false`. Model does not see
+the calculation or produce a final answer in this path. This is intentionally a
+different completion contract, not recovery from a failed follow-up. No follow-up
+is attempted. Full CLI delegate loop and its failure-stage diagnostics remain.
+
+Initial model request parameters are unchanged. Timeout remains 20 seconds, retries
+zero; no forced tool choice, new provider, caching, fallback or schema authority
+change. Auth, Origin/Host/client checks, screenshot confirmation, closed benchmark
+envelope, exact-fact check and shared paid-operation limits remain. Multiple calls
+are rejected before any execution. Only a completed validated selection and successful
+canonical calculation can produce browser success; initial timeout still yields 502.
+No HTML changes needed: existing expanded trace displays the new provenance fields.
+
+Validation: 93 offline tests pass. H5 coverage now checks browser initial timeout,
+CLI after-tool timeout, one-request canonical $2.00/$1.75/unknown decisions with
+preserved costs, no-call/multiple/unknown/malformed/changed-fact/benchmark-injection
+and incomplete/failed/cancelled output rejection, calculation errors/invalid output,
+confirmation gating, redaction, lock release and installed-SDK mocked HTTP behavior.
+Updated two existing fake-model fixtures with documented completion statuses; their
+assertions remain. No live candidate inference, owner Mac candidate tests, new
+rendered QA, publication or deployment yet. This change removes an observed failing
+browser dependency but is not a proven provider fix or reliability result.
+
+Rechecked official Meta tool-calling and Responses documentation October 27, 2026:
+https://dev.meta.ai/docs/tool-calling and
+https://dev.meta.ai/docs/protocols/responses . Documentation distinguishes local tool
+execution from the follow-up used to return results to the model. Stopping after
+local execution for canonical UI delivery is our application design decision; it
+is not claimed as a model-completed result round trip. No API parameters changed.
+
+Publication proposal after owner approval: add a follow-up commit to existing H5
+draft PR #4 and rewrite its title/description around final browser behavior. No
+merge/deployment authorization implied. Mac can retain the existing tab because
+only server behavior changes; refresh is not required for the diagnostic test.
+
 Baseline: GitHub main verified at 4491d4a18e44318d5d1589f247bacfdf4bf949c4.
 Isolated local branch: feature/h5-demo-validation. Baseline: 73 tests pass.
 
