@@ -33,3 +33,7 @@ Started a fresh worktree from merged H2 main 5f9c188. Verified official Meta ima
 ## 2026-10-27 — H3 final evidence and candidate preparation
 
 Recorded owner 56-test Mac result and supplied successful live image extraction/confirmed evaluation screenshots. Corrected stale documentation to match strict structured output, 4096-token bounded extraction and low reasoning effort. Kept the initial preview/JSON failures and exact-cause uncertainty explicit. Added installed-SDK mocked-HTTP serialization test (assistant total 57). Rechecked remote main remains merged H2. Prepared a complete source snapshot, binary diff, checksums and draft PR text for approval. No H3 GitHub mutation, paid request, production access or deployment.
+
+## 2026-10-27 — H4 local benchmark slice
+
+Verified merged H3 main 01c9f45 through GitHub and cloned only the standalone competition repository. Created local feature/h4-carrier-benchmarks. Added ephemeral authenticated carrier benchmark envelope, deterministic target override/unknown handling, compact confirmation controls and source/change display. Kept model tool and vision schemas free of benchmarks. All 57 prior tests plus 16 H4 cases pass. No paid inference, remote mutation or deployment. See H4_REVIEW.md.

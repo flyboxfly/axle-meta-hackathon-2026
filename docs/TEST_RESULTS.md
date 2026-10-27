@@ -68,3 +68,7 @@ Owner screenshot at 09:19:41 Eastern shows the synthetic screenshot, model muse-
 This demonstrates one owner-executed synthetic screenshot → draft → confirmation → real delegation → canonical evaluation. It is not an assistant live call, an accuracy benchmark or proof of general repeated reliability. Successful mobile draft/evaluated states remain unverified.
 
 Final candidate: **57 offline tests** in assistant workspace (29 H2 + 28 H3). The additional final test uses the installed OpenAI SDK and mocked HTTP to verify image and strict structured-output serialization without reaching Meta. It is not yet owner-executed. Dependencies, Python compilation, JavaScript syntax and whitespace checked. Complete binary patch is checked against an isolated H2 tree and every reconstructed source file is compared byte-for-byte before delivery.
+
+## H4 local offline verification — October 27, 2026
+
+Assistant: 73 passed (57 pre-existing + 16 H4). Added benchmark validation, authority, request-isolation and canonical decision-transition tests. pip check, Python compilation, JavaScript syntax and git diff whitespace pass. No owner/live H4 inference executed. Scratch jsdom checks pass for benchmark payload, confirmation reset, target comparison, unknown path and screenshot separation. Browser download failed with invalid archive; rendered UI QA remains pending. Full details and canonical outputs: H4_REVIEW.md.
