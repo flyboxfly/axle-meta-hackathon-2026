@@ -113,3 +113,36 @@ model_received_result=false. Server 46588 cleanly stopped afterward.
 Core fresh-page acceptance passes; repeated reliability and exact attempt count
 are not established. No new offline suite pass claimed: latest owner baseline
 is 93 passed in 2.54s; assistant H6 runtime lacks pytest. See H6_REVIEW.md.
+
+## H7 slice 1 — assistant offline validation
+
+107 passed in 1.73s on isolated a0bbbb0-based worktree: 93 existing tests and 14
+H7 cases. In-process HTTP-handler tests only; no live model, separate TCP client,
+Mac candidate run, native connector or deployment claimed. See H7_REVIEW.md.
+
+## H7 owner Mac and separate-client evidence
+
+Owner reported 107 passed in 2.83s on feature/h7-axle-api, then verified all three
+$2.00/$1.75/unknown target scenarios from a separate Terminal client over loopback
+HTTP. Canonical delivery and no model invocation were asserted; costs/surplus
+remained $290/$130. Unknown target returned the expected next question.
+Server process 47730 cleanly stopped. See H7_REVIEW.md. No live external model
+delegation or native connector proof follows from this test.
+
+## H7 external delegation candidate — assistant offline
+
+121 passed in 1.77s (107 prior + 14 harness cases). Fake model transport with
+real in-process FastAPI HTTP handlers; no live SDK wire/model/round-trip proof.
+Checks exact facts, bounded calls, result linkage, HTTP and follow-up failures,
+redaction and preserved browser/CLI behavior. See H7_REVIEW.md.
+
+## H7 owner live external round-trip verification
+
+Owner Mac on d842e32: 121 passed in 2.60s. Owner supplied successful real
+Muse Spark 1.3 selection → loopback HTTP axleAPI 200 → canonical result submitted
+→ completed follow-up. NEGOTIATE, target 2.00, gap 60.00, costs 290.00, estimated
+operating surplus after allocated costs 130.00. No model prose validation claimed.
+Initial lowercase confirmation cancelled without requests; subsequent confirmed
+run succeeded. Server 47922 stopped cleanly. IDs and limits in H7_REVIEW.md.
+This is owner-executed live evidence; native integration and repeated reliability
+remain unverified. No assistant paid inference or remote deployment.

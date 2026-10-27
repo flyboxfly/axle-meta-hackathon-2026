@@ -92,3 +92,35 @@ Owner authorized review and merge of PR #5, confirmed Startup Track and permitte
 VPS reuse, with required opening provenance disclosure. Updated demo opening,
 compliance status and H6 review accordingly. Changes remain documentation only;
 no new tests or paid calls are claimed. Recording and deployment remain pending.
+
+## 2026-10-27 — H7 local contract slice
+
+Verified merged H6 via GitHub; isolated feature/h7-axle-api from a0bbbb0. Added
+loopback bearer API with required strict confirmed facts/benchmark envelope and
+canonical results plus structured next questions. No internal model call or legacy
+behavior change. 107 offline tests pass in 1.73s. No publication, deployment or
+paid inference. See H7_REVIEW.md for limits and remaining external delegation work.
+
+## 2026-10-27 — H7 owner local API verification
+
+Published slice 1 as draft PR #6 at 15a4232 with owner approval. Owner Mac: 107
+passed in 2.83s. Separate loopback HTTP client verified confirmed targets 2.00,
+1.75 and unknown with correct decisions and canonical figures, no model invoked.
+Recorded clean server 47730 shutdown. This evidence follow-up is local only;
+model-selected external delegation remains the next validation step.
+
+## 2026-10-27 — H7 external delegation local candidate
+
+Rechecked official Meta tool/Responses protocol. Added bounded local CLI harness
+for model selection → exact-fact HTTP axleAPI → canonical result sent to model →
+completed follow-up. Benchmark/confirmation authority stays outside model schema.
+121 offline tests passed in 1.77s; no paid inference or slice 2 publication.
+Owner approval required before updating draft PR #6.
+
+## 2026-10-27 — H7 owner live round-trip evidence
+
+Owner synchronized d842e32: 121 Mac tests passed in 2.60s. Confirmed live external
+HTTP tool execution and completed Meta follow-up with correct canonical results.
+Recorded the no-request lowercase cancellation separately. Server 47922 cleanly
+stopped. Evidence-only local follow-up; approval needed before PR #6 update.
+Native connector, remote deployment and repeated-run reliability remain open.
