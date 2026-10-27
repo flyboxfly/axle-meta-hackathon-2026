@@ -34,9 +34,10 @@ class Evaluation(BaseModel):
     total_miles: str
     loaded_rpm: str
     all_mile_rpm: str
-    target_all_mile_rpm: str
-    target_revenue: str
-    revenue_gap_to_target: str
+    benchmark_source: str = "synthetic_default"
+    target_all_mile_rpm: str | None
+    target_revenue: str | None
+    revenue_gap_to_target: str | None
     estimated_operating_cost: str | None
     estimated_operating_surplus_after_allocated_costs: str | None
     missing_information: list[str]

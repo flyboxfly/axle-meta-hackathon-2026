@@ -1,5 +1,6 @@
 """Loopback-only carrier interface. No public deployment boundary is claimed."""
 import base64
+from decimal import Decimal
 import logging
 import os
 from pathlib import Path
@@ -22,10 +23,18 @@ router = APIRouter()
 _gate = threading.Lock()
 _attempts = deque()
 
+class CarrierBenchmark(BaseModel):
+    """Authenticated form assertion, separate from model tool and screenshot facts."""
+    model_config = ConfigDict(extra="forbid", allow_inf_nan=False)
+    target_all_mile_rpm: Decimal | None = Field(gt=0, le=100, decimal_places=2)
+    confirmed: Literal[True]
+
+
 class WebRequest(BaseModel):
     model_config = ConfigDict(extra="forbid")
     message: str = Field(default="Ask Axle to evaluate this opportunity.", min_length=1, max_length=1500)
     opportunity: Opportunity
+    benchmark: CarrierBenchmark | None = None
     source: Literal["manual", "screenshot"] = "manual"
     screenshot_confirmed: bool = False
 
@@ -77,7 +86,11 @@ def live_run(body: WebRequest):
         # The model must preserve every supplied fact, including unknowns.
         if op != canonical:
             raise ValueError("Delegated facts differ from confirmed carrier inputs")
-        return evaluate(op)
+        if body.benchmark is None:
+            # Compatibility for H1/H2 clients; explicitly labeled synthetic default.
+            return evaluate(op)
+        return evaluate(op, target=body.benchmark.target_all_mile_rpm,
+                        benchmark_source="carrier_confirmed" if body.benchmark.target_all_mile_rpm is not None else "carrier_unknown")
     with OpenAI(api_key=key, base_url=BASE_URL, timeout=20, max_retries=0) as client:
         result = delegate(client, body.message + "\nConfirmed structured facts follow. Use these exactly; null means unknown.\n" + canonical.model_dump_json(), execute)
     if len(result["evaluations"]) != 1:

@@ -10,7 +10,8 @@ def money(value: Decimal) -> str:
     return str(value.quantize(Decimal("0.01"), rounding=ROUND_HALF_UP))
 
 
-def evaluate(op: Opportunity) -> Evaluation:
+def evaluate(op: Opportunity, *, target: Decimal | None = TARGET,
+             benchmark_source: str = "synthetic_default") -> Evaluation:
     miles = op.loaded_miles + op.deadhead_miles
     missing = [name for name in (
         "diesel_per_gallon", "mpg", "tolls", "driver_cost", "maintenance_per_mile",
@@ -24,8 +25,10 @@ def evaluate(op: Opportunity) -> Evaluation:
     if all(value is not None for value in cost_fields):
         cost = (miles / op.mpg * op.diesel_per_gallon + op.tolls + op.driver_cost
                 + miles * op.maintenance_per_mile + op.equipment_trip_cost + op.insurance_trip_allocation)
-    target_revenue = miles * TARGET
-    gap = max(Decimal(0), target_revenue - op.payout)
+    if target is None:
+        missing.append("carrier_revenue_target")
+    target_revenue = miles * target if target is not None else None
+    gap = max(Decimal(0), target_revenue - op.payout) if target_revenue is not None else None
     # Missing facts always prevent an actionable acceptance/rejection classification.
     decision = "NEED_MORE_INFORMATION"
     if not missing:
@@ -38,11 +41,13 @@ def evaluate(op: Opportunity) -> Evaluation:
     return Evaluation(
         profile_id=PROFILE_ID, decision=decision, total_miles=str(miles),
         loaded_rpm=money(op.payout / op.loaded_miles), all_mile_rpm=money(op.payout / miles),
-        target_all_mile_rpm=money(TARGET), target_revenue=money(target_revenue),
-        revenue_gap_to_target=money(gap), estimated_operating_cost=money(cost) if cost is not None else None,
+        benchmark_source=benchmark_source,
+        target_all_mile_rpm=money(target) if target is not None else None,
+        target_revenue=money(target_revenue) if target_revenue is not None else None,
+        revenue_gap_to_target=money(gap) if gap is not None else None, estimated_operating_cost=money(cost) if cost is not None else None,
         estimated_operating_surplus_after_allocated_costs=money(op.payout-cost) if cost is not None else None,
         missing_information=missing,
-        assumptions=["Synthetic box-truck profile; $2.00/mile revenue target is not a cost or profit target.",
+        assumptions=[f"Benchmark source: {benchmark_source}; revenue target is not a cost or profit target.",
                      "Payout is the complete confirmed total; no additional FSC or bid is inferred.",
                      "Mileage and schedule feasibility are supplied, not independently verified.",
                      "Equipment trip cost must include applicable per-mile rental fees without double counting.",

@@ -68,3 +68,16 @@ Owner screenshot at 09:19:41 Eastern shows the synthetic screenshot, model muse-
 This demonstrates one owner-executed synthetic screenshot → draft → confirmation → real delegation → canonical evaluation. It is not an assistant live call, an accuracy benchmark or proof of general repeated reliability. Successful mobile draft/evaluated states remain unverified.
 
 Final candidate: **57 offline tests** in assistant workspace (29 H2 + 28 H3). The additional final test uses the installed OpenAI SDK and mocked HTTP to verify image and strict structured-output serialization without reaching Meta. It is not yet owner-executed. Dependencies, Python compilation, JavaScript syntax and whitespace checked. Complete binary patch is checked against an isolated H2 tree and every reconstructed source file is compared byte-for-byte before delivery.
+
+## H4 local offline verification — October 27, 2026
+
+Assistant: 73 passed (57 pre-existing + 16 H4). Added benchmark validation, authority, request-isolation and canonical decision-transition tests. pip check, Python compilation, JavaScript syntax and git diff whitespace pass. No owner/live H4 inference executed. Scratch jsdom checks pass for benchmark payload, confirmation reset, target comparison, unknown path and screenshot separation. Browser download failed with invalid archive; rendered UI QA remains pending. Full details and canonical outputs: H4_REVIEW.md.
+
+
+## Owner live verification and UI follow-up — October 27, 2026
+
+Owner Mac: 73 passed in 2.55s on published H4 head 0504803869f1336fce58b821ea3f3c0d44ad2410. Owner supplied desktop Chrome screenshots showing complete synthetic $420 / 180 loaded / 60 additional-mile opportunity: confirmed $2.00 target → NEGOTIATE, $60 gap; confirmed $1.75 → ACCEPT, $0 gap; unknown target → NEED_MORE_INFORMATION, unknown gap. Costs remained $290 and estimated operating surplus after allocated costs $130 in all three successful cases. Each successful result displayed Muse Spark 1.3 and executed_and_validated tool evidence. These are owner-executed calls, not assistant-paid inference.
+
+The first $1.75 reevaluation failed with provider_timeout, status=None and HTTP 502. An unchanged manual retry succeeded. This establishes observed recovery, not a diagnosed cause, reliability rate or timeout fix. No retry/timeout policy changed. Owner reported stopping the server after the unknown-target test.
+
+Screenshots also exposed a stale previous decision heading after input edits. Local follow-up replaces the heading on input change, request start and request failure, while keeping prior successful evaluation only for subsequent comparison. This presentation fix does not change calculations or inference behavior. Owner desktop portions inspected without apparent clipping; mobile, physical-device and broader accessibility QA remain pending. Screenshot-to-benchmark H4 integration has not been live-tested.
