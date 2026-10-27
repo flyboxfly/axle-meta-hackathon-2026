@@ -3,11 +3,19 @@
 Based on owner-executed fresh-page rehearsal on main a0f82ec, October 27, 2026.
 This is a recording plan, not a completed video or timed rehearsal.
 
+## Required opening disclosure
+
+First spoken line and opening screen text:
+
+> Axle’s concept, brand and VPS pre-existed; we built this standalone application, Meta model integrations and demonstrated workflow for the hackathon.
+
+Owner clarification, October 27: Startup Track selected; existing VPS hosting permitted with this pre-existing-versus-new disclosure. Deployment is still pending.
+
 ## Story and narration
 
 | Time | Screen/action | Suggested narration |
 | --- | --- | --- |
-| 0:00–0:20 | Product headline and prototype disclosure | “I’m Brian, a carrier and the founder of Fly Box Fly. A load can look good per loaded mile and still miss your business needs. Personal AI should know when to ask a freight specialist: Axle.” |
+| 0:00–0:20 | Product headline and prototype disclosure | “Axle’s concept, brand and VPS pre-existed; we built this standalone application, Meta model integrations and demonstrated workflow for the hackathon. I’m Brian, a carrier and the founder of Fly Box Fly. A load can look good per loaded mile and still miss your business needs. Personal AI should know when to ask a freight specialist: Axle.” |
 | 0:20–0:45 | Select synthetic fixture, show consent, request extraction | “This is synthetic data in a local Meta API prototype, with no native Muse connector. Muse Spark reads the screenshot into an unconfirmed draft. I review the equipment, complete payout, and every mile committed.” |
 | 0:45–1:15 | Show $420, 180 loaded, 60 additional; enter target/costs/schedule; confirm target, then screenshot last | “The offer is $420 for 180 loaded miles, plus 60 additional miles. I supply my trip costs, schedule assessment, and a two-dollar all-mile revenue target. The carrier confirms the facts and target.” |
 | 1:15–1:45 | Submit once; show NEGOTIATE and canonical figures | “Muse Spark selects Axle’s freight tool. Axle validates the supplied facts and calculates the result. Loaded revenue is $2.33 per mile, but all-mile revenue is $1.75. That leaves a $60 gap to my target. Estimated costs are $290, leaving $130 of estimated operating surplus after allocated costs.” |
@@ -40,6 +48,6 @@ Fresh-page extraction → NEGOTIATE → ACCEPT and canonical delivery evidence a
 verified by owner screenshots on merged H5. Repeated reliability, measured model
 latency, broad extraction accuracy, mobile/accessibility QA, final recording and
 judge access remain unverified. Local loopback demo only; no deployment performed.
-Full official rules, track selection and infrastructure reuse still need confirmation.
+Startup Track and VPS reuse are confirmed by owner clarification; full official rules were not independently retrieved in full. Remote access still requires implementation and review.
 Do not claim native connectors, booking, production carrier profiles, historical
 benchmarks, a model/tool-result round trip, or a model-authored final evaluation.

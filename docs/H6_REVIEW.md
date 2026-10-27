@@ -46,10 +46,14 @@ sequence alone. Confirmation and invalidation are preserved.
 DEMO_PLAN.md replaces the obsolete H1 recording outline with current behavior,
 a timed narration draft, exact inputs, honest latency-editing guidance and capture
 steps. A timed offline rehearsal and actual video are still pending. Public judge
-access, full eligibility/track confirmation, mobile/accessibility checks, broad
+access, remaining eligibility confirmation, mobile/accessibility checks, broad
 extraction accuracy and repeated-run reliability remain open. Initial model timeout
 is still possible; no general provider fix is claimed.
 
-No remote changes, merge, deployment, production access or assistant paid calls.
-Publication proposal: documentation-only feature branch and draft PR after owner
-approval. No merge/deployment authorization is implied.
+H6 documentation published with owner approval as draft PR #5 at 95c4b18.
+Owner subsequently authorized review and merge, and confirmed Startup Track plus
+permitted existing VPS hosting, subject to a first-line pre-existing/new-work
+disclosure. DEMO_PLAN.md now opens with that disclosure. This clarification is
+owner-supplied, not a new independent retrieval of the full official rules.
+No deployment, production access or assistant paid calls performed.
+Timed narration rehearsal and recording remain pending; regroup after merge.

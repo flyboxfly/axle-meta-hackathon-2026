@@ -85,3 +85,10 @@ Prepared H6_REVIEW.md and replaced obsolete H1 demo plan with current three-minu
 recording/narration draft. Documentation only, no new paid assistant calls or
 application changes. No new offline pass claimed (assistant pytest unavailable).
 Timed recording rehearsal, final video and publication approval remain pending.
+
+## 2026-10-27 — H6 closeout review
+
+Owner authorized review and merge of PR #5, confirmed Startup Track and permitted
+VPS reuse, with required opening provenance disclosure. Updated demo opening,
+compliance status and H6 review accordingly. Changes remain documentation only;
+no new tests or paid calls are claimed. Recording and deployment remain pending.
