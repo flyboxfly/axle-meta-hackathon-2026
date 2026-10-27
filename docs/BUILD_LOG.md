@@ -25,3 +25,11 @@ Rechecked public main against local H1 baseline. Recorded owner live evidence an
 ## 2026-10-27 — H2 PR follow-up
 
 Owner authorized proceeding with the four offline reliability tests and mobile verification record after stopping the Mac server. Follow-up changes tests and documentation only. Assistant reran 28 passing tests; added limited 390 × 905 screenshot visual evidence. No application changes, paid inference, main update, merge or deployment. The Mac's last reported suite remains 24 tests.
+
+## 2026-10-27 — H3 local screenshot intake
+
+Started a fresh worktree from merged H2 main 5f9c188. Verified official Meta image-input documentation. Added bounded PNG/JPEG extraction via Responses API, strict unconfirmed draft schema, metadata removal, explicit confirmation and shared paid-request controls. Kept H1 economics and delegation unchanged. Added a fresh precise synthetic screenshot fixture and offline tests (50 passing). No paid request, remote publication, production access or deployment performed. See H3_REVIEW.md.
+
+## 2026-10-27 — H3 final evidence and candidate preparation
+
+Recorded owner 56-test Mac result and supplied successful live image extraction/confirmed evaluation screenshots. Corrected stale documentation to match strict structured output, 4096-token bounded extraction and low reasoning effort. Kept the initial preview/JSON failures and exact-cause uncertainty explicit. Added installed-SDK mocked-HTTP serialization test (assistant total 57). Rechecked remote main remains merged H2. Prepared a complete source snapshot, binary diff, checksums and draft PR text for approval. No H3 GitHub mutation, paid request, production access or deployment.

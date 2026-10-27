@@ -6,7 +6,7 @@ build-backend = "setuptools.build_meta"
 name = "axle-meta-hackathon-2026"
 version = "0.1.0"
 requires-python = ">=3.11"
-dependencies = ["fastapi", "uvicorn", "httpx[socks]", "openai", "socksio"]
+dependencies = ["fastapi", "uvicorn", "httpx[socks]", "openai", "socksio", "Pillow==12.3.0"]
 
 [project.optional-dependencies]
 test = ["pytest"]
