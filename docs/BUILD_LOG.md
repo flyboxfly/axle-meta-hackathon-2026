@@ -75,3 +75,20 @@ Verified merged H3 main 01c9f45 through GitHub and cloned only the standalone co
 ## 2026-10-27 — H4 owner evidence and stale-heading fix
 
 Recorded owner Mac 73-test pass and successful live $2.00 / $1.75 / unknown-target scenarios. Preserved the observed provider timeout and unchanged successful manual retry; no cause or reliability claim. Fixed stale decision heading during edits, loading and failed reevaluation. Local follow-up only; publication review pending.
+
+## 2026-10-27 — H6 fresh-page evidence and recording draft
+
+Verified main a0f82ec and expected tree; created isolated local H6 branch. Owner
+completed fresh-page screenshot extraction → $2.00 NEGOTIATE → $1.75 ACCEPT
+with correct comparison and canonical-UI trace; clean server shutdown recorded.
+Prepared H6_REVIEW.md and replaced obsolete H1 demo plan with current three-minute
+recording/narration draft. Documentation only, no new paid assistant calls or
+application changes. No new offline pass claimed (assistant pytest unavailable).
+Timed recording rehearsal, final video and publication approval remain pending.
+
+## 2026-10-27 — H6 closeout review
+
+Owner authorized review and merge of PR #5, confirmed Startup Track and permitted
+VPS reuse, with required opening provenance disclosure. Updated demo opening,
+compliance status and H6 review accordingly. Changes remain documentation only;
+no new tests or paid calls are claimed. Recording and deployment remain pending.

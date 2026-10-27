@@ -19,3 +19,16 @@ Primary technical references consulted before implementation:
 - https://dev.meta.ai/docs/tool-calling
 
 API model, base URL, SDK compatibility and tool protocol are documented. Account billing activation, pricing, live invocation, actual SDK/server compatibility, connector approval, and judge access remain unverified.
+
+## October 27 owner clarification — current status
+
+Supersedes earlier pending track/infrastructure statements: Startup Track selected;
+existing VPS hosting is permitted. The demo must open with one line identifying
+pre-existing material versus hackathon work. Source: explicit owner clarification,
+not independent retrieval of the full Official Rules.
+
+Opening line: “Axle’s concept, brand and VPS pre-existed; we built this standalone application, Meta model integrations and demonstrated workflow for the hackathon.”
+
+Hosting permission does not establish deployment or remote security readiness.
+No competition deployment has been performed; review and authorization remain
+necessary before exposing the service. See DEMO_PLAN.md for recording guidance.
