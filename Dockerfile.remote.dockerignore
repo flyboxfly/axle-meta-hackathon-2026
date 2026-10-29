@@ -1,0 +1,28 @@
+# Dockerfile-specific build-context allowlist for Dockerfile.remote (H9 review).
+#
+# Used automatically by BuildKit when building with `-f Dockerfile.remote`
+# (falls back to `.dockerignore` on builders without per-Dockerfile support;
+# that fallback is UNVERIFIED -- the owner must confirm which ignore file the
+# platform builder honors before deployment). No `docker build` has been run.
+#
+# Default-deny: everything is excluded first, then only the packaging inputs
+# and minimal runtime files listed below are re-included. Parent directories
+# of re-included files must be re-included explicitly.
+#
+# Excluded by the default-deny (never sent in build context): .git history,
+# secrets (.env files, tokens, keys), virtualenvs (.venv*, venv/), tests/,
+# unrelated source (app.py, web.py, meta_agent.py, vision.py,
+# external_agent.py, carrier.html), fixtures/, browser assets, screenshots,
+# docs/, scripts/, requirements.lock.txt (full local set), and all other files.
+**
+!Dockerfile.remote
+!requirements.remote.lock.txt
+!deploy/
+!deploy/remote_healthcheck.py
+!src/
+!src/axle_hackathon/
+!src/axle_hackathon/__init__.py
+!src/axle_hackathon/remote_app.py
+!src/axle_hackathon/axle_api.py
+!src/axle_hackathon/schemas.py
+!src/axle_hackathon/economics.py

@@ -1,0 +1,61 @@
+# H9 remote-runtime candidate lock for axle_hackathon.remote_app:app (review only).
+#
+# CANDIDATE LOCK -- MAC CLEAN-ENVIRONMENT VERIFIED; LINUX CONTAINER
+# VERIFICATION PENDING.
+# Owner Mac verification of this corrected 15-pin lock: fresh virtualenv
+# install of this file only succeeded, `pip check` passed, and the installed
+# runtime exactly matched all 15 pins (see docs/H9_DEPLOYMENT.md section 4B).
+# No dependency resolution was run to produce it and no package hashes are
+# provided. Linux container verification remains pending; do not treat it as
+# a verified lock for deployment until the owner confirms the Linux/container
+# install.
+#
+# Owner-observed history (Mac): a clean install of the prior 14-pin candidate
+# succeeded and `pip check` passed, selecting opentelemetry-api==1.45.1
+# transitively via fastapi==0.162.0 (which requires opentelemetry-api>=1.44.0).
+# That revealed the missing explicit pin corrected here.
+#
+# Grounding: every pin below copies the exact version recorded in the existing
+# requirements.lock.txt for the same package name. No version was invented or
+# upgraded here. If requirements.lock.txt changes, this candidate must be
+# re-grounded and re-verified.
+#
+# Scope: the smallest dependency closure the isolated remote boundary needs:
+# FastAPI + Starlette + Pydantic request handling and Uvicorn serving, with
+# their transitive dependencies as present in requirements.lock.txt.
+#   fastapi            -> starlette, pydantic, annotated-doc, typing_extensions,
+#                         opentelemetry-api (>=1.44.0 required by
+#                         fastapi==0.162.0; API package only, no SDK or
+#                         exporter extras)
+#   starlette          -> anyio
+#   pydantic           -> annotated-types, pydantic-core, typing_extensions,
+#                         typing-inspection
+#   anyio              -> idna, sniffio
+#   uvicorn            -> click, h11
+#
+# Excluded local-only packages (present in requirements.lock.txt, absent here):
+# openai (inference SDK), httpx/httpx2/httpcore/httpcore2 (HTTP clients),
+# Pillow (image intake), pytest and its dependencies (iniconfig, pluggy,
+# Pygments, packaging), plus socksio, jiter, certifi, truststore.
+# The remote boundary imports none of these; see
+# tests/test_h9_packaging.py for the offline import-closure check. Absence from
+# this file does not by itself prove container absence; verify inside the built
+# image with `pip list` / `pip check` per docs/H9_DEPLOYMENT.md.
+#
+# No hashes are pinned. Mac install verified; Linux/container install not claimed.
+
+annotated-doc==0.0.5
+annotated-types==0.8.0
+anyio==4.15.1
+click==8.5.0
+fastapi==0.162.0
+h11==0.16.0
+idna==3.20
+opentelemetry-api==1.45.1
+pydantic==2.14.1
+pydantic_core==2.50.1
+sniffio==1.3.1
+starlette==1.10.0
+typing-inspection==0.4.4
+typing_extensions==4.16.0
+uvicorn==0.54.0
