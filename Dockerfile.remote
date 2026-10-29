@@ -4,15 +4,18 @@
 # no storage. H8 behavior, canonical economics, and H1-H7 functionality are
 # preserved; this file stages runtime files only and changes no app behavior.
 #
-# UNVERIFIED BASE TAG CANDIDATE -- READ BEFORE BUILDING:
-#   python:3.11.14-slim-bookworm is a specific Python 3.11+ candidate chosen
-#   without pulling any image. Its availability has NOT been verified, no digest
-#   is pinned here, and no `docker build` has been executed. The owner must
-#   confirm the tag exists, inspect its digest, and replace the FROM line with a
-#   verified tag+digest pin (for example `FROM python@sha256:<verified-digest>`)
-#   before any deployment. Do not deploy on an unpinned or unverified tag.
+# Base image pinned to the owner-observed registry digest (tag+digest pin).
+#   Owner queried the registry from the x86_64 VPS on October 29, 2026.
+#   Tag existence and linux/amd64 availability were confirmed:
+#     index digest (multi-platform OCI index, pinned below):
+#       sha256:65a93d69fa75478d554f4ad27c85c1e69fa184956261b4301ebaf6dbb0a3543d
+#     linux/amd64 manifest digest (observed, not pinned):
+#       sha256:83f339c1be6340ae1096010fdccf6552ac932d8f410d45d206014916bdf37e48
 #   Python 3.11+ is required (remote_app uses asyncio.timeout).
-FROM python:3.11.14-slim-bookworm
+#   Pending: image pull/build, Linux dependency compatibility, container
+#   execution, and security checks. Registry metadata inspection is not an
+#   image vulnerability assessment.
+FROM python:3.11.14-slim-bookworm@sha256:65a93d69fa75478d554f4ad27c85c1e69fa184956261b4301ebaf6dbb0a3543d
 
 # Deterministic, log-friendly runtime. No secrets or production config here.
 ENV PYTHONDONTWRITEBYTECODE=1 \

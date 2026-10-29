@@ -22,7 +22,10 @@ New files (six; no application source modified):
   verification passed (§4B); still a candidate pending Linux container
   verification; no hashes; Linux/container install not claimed.
 - `Dockerfile.remote` — dedicated image for `remote_app:app`. Python 3.11+
-  candidate base (unverified tag, no digest pinned), minimal COPY set,
+  base pinned to the owner-observed index digest
+  (`python:3.11.14-slim-bookworm@sha256:65a93d69fa75478d554f4ad27c85c1e69fa184956261b4301ebaf6dbb0a3543d`;
+  tag existence and linux/amd64 availability confirmed via owner registry
+  query from the x86_64 VPS on October 29, 2026), minimal COPY set,
   numeric non-root user, single Uvicorn worker, explicit flags, stdlib
   HEALTHCHECK. No baked-in tokens, keys, hostnames, or production config.
 - `Dockerfile.remote.dockerignore` — Dockerfile-specific build-context
@@ -59,10 +62,16 @@ New files (six; no application source modified):
   truststore. Package-installation status (distinct from the loaded-module
   check): Mac clean-install verification of the corrected 15-pin lock
   passed (§4B); Linux/container install remains pending.
-- **Unverified base tag, no digest.** `FROM python:3.11.14-slim-bookworm` is
-  a specific 3.11+ candidate (3.11+ required for `asyncio.timeout`). Tag
-  availability is unverified and no digest is pinned; the owner must confirm
-  the tag and pin a verified digest before any deployment.
+- **Pinned base image (observed index digest).**
+  `FROM python:3.11.14-slim-bookworm@sha256:65a93d69fa75478d554f4ad27c85c1e69fa184956261b4301ebaf6dbb0a3543d`
+  (3.11+ required for `asyncio.timeout`). The owner queried the registry
+  from the x86_64 VPS on October 29, 2026; tag existence and linux/amd64
+  availability were confirmed (linux/amd64 manifest digest observed:
+  `sha256:83f339c1be6340ae1096010fdccf6552ac932d8f410d45d206014916bdf37e48`).
+  The base is pinned to the observed multi-platform OCI index digest above.
+  Image pull/build, Linux dependency compatibility, container execution,
+  and security checks remain pending. Registry metadata inspection is not
+  an image vulnerability assessment.
 - **Numeric non-root.** Dedicated UID/GID 65532; `USER 65532`; staged app
   files and the health probe are root-owned (`--chown=0:0`) and readable /
   executable as needed, so the runtime process does not own its application
@@ -209,10 +218,12 @@ container image (§4C), Linux Python 3.11 compatibility, or egress (§4D).
 ### C. Pending container checks (require a container runtime)
 
 None of these commands have been executed; all commands in §4C and §4D
-are illustrative only. They require Docker (or an equivalent) and a verified
-base-tag digest (§2). Replace the `FROM` line with the verified pin before
-building. Docker, Podman, and Colima were not found on the owner Mac PATH;
-install and confirm a runtime before starting.
+are illustrative only. They require Docker (or an equivalent). The base is
+pinned to the observed index digest (§2); no further `FROM` replacement is
+needed before building. Docker, Podman, and Colima were not found on the
+owner Mac PATH. Docker 29.8.1 and Buildx v0.37.1 were confirmed on
+the x86_64 VPS. Planned container validation will use a dedicated temporary
+workspace there; no Mac runtime installation is required.
 
 Build (from the workspace root):
 
@@ -418,16 +429,26 @@ approved deployment.
 
 No publication, reviewer access, or deployment is approved by this
 candidate. Before any exposure beyond loopback, the owner must explicitly
-approve: the verified base-image digest, the dedicated public hostname, TLS
-and proxy configuration (Host preservation, timeouts, body limits,
-logging), resource limits, restart policy, egress deny-by-default with
-evidence, reviewer-token issuance/rotation, and the §4A–§4C evidence for
-this exact branch. H8 lists the remaining required controls; none are
-closed by this packaging slice.
+approve: the pinned base-image digest plus image pull/build, Linux
+dependency compatibility, container execution, and security-check
+evidence, the dedicated public hostname, TLS and proxy configuration
+(Host preservation, timeouts, body limits, logging), resource limits,
+restart policy, egress deny-by-default with evidence, reviewer-token
+issuance/rotation, and the §4A–§4C evidence for this exact branch. H8
+lists the remaining required controls; none are closed by this packaging
+slice.
 
 ## 8. Unverified assumptions and remaining requirements
 
-- Base tag `python:3.11.14-slim-bookworm` availability and digest: unverified.
+- Base image `python:3.11.14-slim-bookworm`: tag existence and linux/amd64
+  availability confirmed via owner registry query from the x86_64 VPS on
+  October 29, 2026; pinned to the observed index digest
+  `sha256:65a93d69fa75478d554f4ad27c85c1e69fa184956261b4301ebaf6dbb0a3543d`
+  (linux/amd64 manifest digest observed:
+  `sha256:83f339c1be6340ae1096010fdccf6552ac932d8f410d45d206014916bdf37e48`).
+  Image pull/build, Linux dependency compatibility, container execution,
+  and security checks remain pending. Registry metadata inspection is not
+  an image vulnerability assessment.
 - Which ignore file the platform builder honors
   (`Dockerfile.remote.dockerignore` vs root `.dockerignore`): unverified.
 - Corrected `requirements.remote.lock.txt` (15 pins): Mac clean install,
@@ -437,8 +458,8 @@ closed by this packaging slice.
   verified on Mac (§4B). History: owner Mac clean install of the 14-pin
   candidate succeeded and `pip check` passed, selecting
   opentelemetry-api==1.45.1 transitively and revealing the missing
-  explicit pin. Linux/container install, base-tag availability/digest,
-  and Linux Python 3.11 compatibility: pending.
+  explicit pin. Linux/container install and Linux Python 3.11
+  compatibility: pending.
 - All container checks (§4C) and the optional network-none probe (§4D):
   pending; Docker, Podman, and Colima were not found on the owner Mac PATH.
 - Every Coolify row in §5: unresolved; no hostname, token, TLS, proxy,
