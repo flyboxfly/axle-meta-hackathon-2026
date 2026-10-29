@@ -1,14 +1,21 @@
-# H9 Deployment Packaging — Review Candidate (Not Deployed)
+# H9 Deployment Packaging — Review Candidate (Not Publicly Deployed)
 
 Status: review-only packaging proposal for the existing isolated synthetic
-Axle API (`axle_hackathon.remote_app:app`). No deployment occurred, no
-container image was built, and no Docker command in this document has been
-executed. Owner-executed Mac evidence is recorded for §4A (full suite:
-157 passed in 3.77s) and §4B (corrected 15-pin clean install, `pip check`,
-and clean import); these are Mac results only, not GitHub CI or Linux
-container validation. The owner runs all remaining validation below. Base
-`e162542` per task brief; H8 behavior, canonical economics, and H1–H7
-functionality are preserved (no application source changed).
+Axle API (`axle_hackathon.remote_app:app`). No public deployment occurred
+and no external client/proxy connectivity was tested. Owner-executed VPS
+container validation was completed on October 29, 2026, using source commit
+`dcc56cf028548289ac367b32a4e606a1d56b47da` on an x86_64 VPS (Docker 29.8.1,
+Buildx v0.37.1): linux/amd64 image `axle-h9-validation:dcc56cf` built
+successfully from the pinned Python base; build-time dependency installation
+and `pip check` passed; a hardened network-none test container ran, was
+inspected, probed, and removed as recorded in §4C–§4D. Owner-executed Mac
+evidence is recorded for §4A (full suite: 157 passed in 3.77s) and §4B
+(corrected 15-pin clean install, `pip check`, and clean import); these are
+Mac results only, not GitHub CI. Base `e162542` per task brief; H8 behavior,
+canonical economics, and H1–H7 functionality are preserved (no application
+source changed). The validation image and temporary VPS source workspace
+remain; container cleanup removed only the test container, not the image or
+workspace.
 
 See also: [H8 remote design](H8_REMOTE_DESIGN.md) for the enforced boundary
 (auth, host allowlist, limits, error mapping, proxy assumptions).
@@ -17,26 +24,35 @@ See also: [H8 remote design](H8_REMOTE_DESIGN.md) for the enforced boundary
 
 New files (six; no application source modified):
 
-- `requirements.remote.lock.txt` — remote-runtime candidate lock (15 pins,
-  exact versions grounded in `requirements.lock.txt`). Mac clean-environment
-  verification passed (§4B); still a candidate pending Linux container
-  verification; no hashes; Linux/container install not claimed.
+- `requirements.remote.lock.txt` — remote-runtime lock (15 pins, exact
+  versions grounded in `requirements.lock.txt`). Mac clean-environment
+  verification passed (§4B); Linux container install verified on the VPS on
+  October 29, 2026 (§4C): build-time install and `pip check` passed, and the
+  installed runtime exactly matched all 15 pins excluding packaging tools.
+  No hashes.
 - `Dockerfile.remote` — dedicated image for `remote_app:app`. Python 3.11+
   base pinned to the owner-observed index digest
   (`python:3.11.14-slim-bookworm@sha256:65a93d69fa75478d554f4ad27c85c1e69fa184956261b4301ebaf6dbb0a3543d`;
   tag existence and linux/amd64 availability confirmed via owner registry
-  query from the x86_64 VPS on October 29, 2026), minimal COPY set,
-  numeric non-root user, single Uvicorn worker, explicit flags, stdlib
-  HEALTHCHECK. No baked-in tokens, keys, hostnames, or production config.
+  query from the x86_64 VPS on October 29, 2026; linux/amd64 image
+  `axle-h9-validation:dcc56cf` successfully built from this base on the same
+  VPS, §4C), minimal COPY set, numeric non-root user, single Uvicorn worker,
+  explicit flags, stdlib HEALTHCHECK. No baked-in tokens, keys, hostnames,
+  or production config.
 - `Dockerfile.remote.dockerignore` — Dockerfile-specific build-context
   allowlist (default-deny plus re-included packaging/runtime files only).
+  Complete build-context allowlist verification remains pending: a small
+  transferred context alone does not prove its exact contents.
 - `deploy/remote_healthcheck.py` — stdlib-only HEALTHCHECK probe: loopback
   TCP transport with an explicit runtime `Host` from `AXLE_API_ALLOWED_HOSTS`,
   bounded timeout, fail-closed on missing/empty/wildcard config.
+  Container-local probe passed on the VPS (§4C–§4D).
 - `tests/test_h9_packaging.py` — offline packaging validation: lock grounding,
   health-probe behavior, and a subprocess isolation test of the staged module
   closure with disposable config and raw ASGI calls. Explicitly does not cover
-  container, install, or egress isolation.
+  container, install, or egress isolation. Container contents, install, and
+  loopback serving were verified separately by owner-executed VPS checks
+  (§4C–§4D); deployment-network egress remains pending.
 - `docs/H9_DEPLOYMENT.md` — this document.
 
 `README.md` gains only a short H9 pointer (no behavior or history changes).
@@ -51,6 +67,7 @@ New files (six; no application source modified):
   complete import surface of the remote boundary. Excluded: `app.py`,
   `web.py`, `meta_agent.py`, `vision.py`, `external_agent.py`,
   `carrier.html`, tests, fixtures, browser assets, screenshots, docs.
+  VPS in-container check confirmed exactly five application modules (§4C).
 - **Candidate lock, 15 pins.** FastAPI/Starlette/Pydantic serving plus
   Uvicorn and their transitive deps as recorded in `requirements.lock.txt`:
   annotated-doc, annotated-types, anyio, click, fastapi, h11, idna,
@@ -61,7 +78,9 @@ New files (six; no application source modified):
   httpcore/httpcore2, Pillow, pytest (and its deps), socksio, jiter, certifi,
   truststore. Package-installation status (distinct from the loaded-module
   check): Mac clean-install verification of the corrected 15-pin lock
-  passed (§4B); Linux/container install remains pending.
+  passed (§4B); Linux container install verified on the VPS on October 29,
+  2026 (§4C): build-time install and `pip check` passed, and the installed
+  runtime exactly matched all 15 pins excluding packaging tools.
 - **Pinned base image (observed index digest).**
   `FROM python:3.11.14-slim-bookworm@sha256:65a93d69fa75478d554f4ad27c85c1e69fa184956261b4301ebaf6dbb0a3543d`
   (3.11+ required for `asyncio.timeout`). The owner queried the registry
@@ -69,41 +88,52 @@ New files (six; no application source modified):
   availability were confirmed (linux/amd64 manifest digest observed:
   `sha256:83f339c1be6340ae1096010fdccf6552ac932d8f410d45d206014916bdf37e48`).
   The base is pinned to the observed multi-platform OCI index digest above.
-  Image pull/build, Linux dependency compatibility, container execution,
-  and security checks remain pending. Registry metadata inspection is not
-  an image vulnerability assessment.
+  The linux/amd64 image was built successfully on the x86_64 VPS on October
+  29, 2026 (`axle-h9-validation:dcc56cf`); Linux dependency compatibility
+  and container execution verified (§4C–§4D). Image vulnerability assessment
+  remains pending. Registry metadata inspection is not an image
+  vulnerability assessment.
 - **Numeric non-root.** Dedicated UID/GID 65532; `USER 65532`; staged app
   files and the health probe are root-owned (`--chown=0:0`) and readable /
   executable as needed, so the runtime process does not own its application
-  source. No root runtime process.
+  source. No root runtime process. VPS inspection confirmed `User=65532` and
+  `id` confirmed UID/GID 65532; checked source/probe files were root-owned
+  and non-writable (§4C).
 - **Uvicorn flags.** Exactly `--workers 1` (H8 limiter is per-process), no
   `--reload`, `--lifespan on` (fail-closed startup validation),
   `--no-proxy-headers` (proxy-header processing explicitly disabled; the app
   ignores `X-Forwarded-*`), `--no-access-log` (access log disabled).
   Remaining risks documented in the Dockerfile: Uvicorn error/startup logs
   may still carry tracebacks, and the platform proxy may log access metadata.
-  Verify proxy log settings and retention before deployment.
+  Verify proxy log settings and retention before deployment. Infrastructure
+  logging review remains pending.
 - **HEALTHCHECK without baked config.** The probe reads the runtime
   `AXLE_API_ALLOWED_HOSTS` inside the container and sends its first entry as
   the `Host` header over loopback TCP (transport only, not an allowlist
   bypass). The probe 5 s timeout is a per-socket-operation timeout, not a
   total deadline; Docker `HEALTHCHECK --timeout=5s` supplies the overall
   process timeout. No localhost default, no wildcard; misconfiguration fails
-  closed.
+  closed. The VPS container reported healthy and the container-local probe
+  passed (§4C–§4D).
 - **Default-deny context.** The `.dockerignore` excludes everything (`**`)
   then re-includes only the Dockerfile, remote lock, health probe, and five
   modules (with parent dirs). Secrets, `.git`, venvs, tests, fixtures,
   screenshots, docs, and the full lock never enter the build context.
   Per-Dockerfile ignore-file support depends on the builder (BuildKit
   honors `Dockerfile.remote.dockerignore` for `-f Dockerfile.remote`);
-  the owner must confirm which file the platform builder uses.
+  the owner must confirm which file the platform builder uses. Complete
+  build-context allowlist verification remains pending: a small transferred
+  context alone does not prove its exact contents.
 - **Tests prove behavior, not text.** `tests/test_h9_packaging.py` checks
   lock grounding, probe behavior, and staged-closure behavior in an isolated
   subprocess; it deliberately does not assert Dockerfile flag strings.
 
 ## 3. What this package does not claim
 
-- No container was built, run, or inspected; all container steps are pending.
+- No public deployment occurred; no external client/proxy connectivity was
+  tested. VPS validation used exec plus loopback only with `--network=none`,
+  no published ports, and no host mounts; it does not establish public
+  serving.
 - History: owner Mac clean install of the prior 14-pin candidate succeeded
   (install and `pip check` passed, selecting opentelemetry-api==1.45.1
   transitively); it revealed the missing explicit pin. Superseded by §4B:
@@ -111,12 +141,24 @@ New files (six; no application source modified):
   passed, `pip check` reported “No broken requirements found”, and the
   installed set exactly matched all 15 pins. That is a package-installation
   result, distinct from the loaded-module check (§4B). Linux/container
-  install remains pending.
+  install since verified on the VPS on October 29, 2026 (§4C): build-time
+  install and `pip check` passed, the installed runtime exactly matched all
+  15 pins excluding packaging tools, and the in-container loaded-module check
+  passed (openai, httpx, PIL, and pytest absent).
 - Offline tests do not establish container contents, install success, or
-  network-egress isolation (stated in the test module docstring).
+  network-egress isolation (stated in the test module docstring). Container
+  contents, install, and loopback serving were established separately by the
+  VPS checks (§4C–§4D); deployment-network egress isolation remains pending.
 - No public hostname is chosen and no credentials exist. Placeholders below
   (`<pending-owner-hostname>`, `<reviewer-token>`) are not real values.
 - Baseten is not integrated; the working Meta integration is unchanged.
+- Still pending: TLS, proxy timeouts/body limits, and infrastructure logging
+  review; deployment-network egress controls; vulnerability assessment and
+  broader load/abuse testing; complete build-context allowlist verification
+  (a small transferred context alone does not prove its exact contents).
+- The validation image (`axle-h9-validation:dcc56cf`) and temporary VPS
+  source workspace remain; container cleanup removed only the test container,
+  not the image or workspace.
 
 ## 4. Owner-run validation commands
 
@@ -124,6 +166,15 @@ Run in order. Stop at the first failure. `<pending-owner-hostname>` is a
 placeholder for the future dedicated hostname (no real host chosen);
 `<reviewer-token>` is a placeholder for a generated token (generate per
 H8 design §Reviewer-token provisioning; never commit or paste it).
+
+Executed evidence versus illustrative commands: §4A–§4B record Mac
+owner-executed evidence. §4C–§4D record VPS owner-executed evidence from
+October 29, 2026 (source commit
+`dcc56cf028548289ac367b32a4e606a1d56b47da`, image
+`axle-h9-validation:dcc56cf`) under “Observed (owner-executed, VPS)” notes.
+Shell blocks in §4C–§4D are illustrative examples of the same checks, not
+exact transcripts, unless stated. Docker warned `--time` is deprecated; future
+examples use `docker stop --timeout`, not `--time`.
 
 ### A. Offline checks (no container runtime needed)
 
@@ -160,7 +211,8 @@ below in a fresh virtual environment with the remote lock only:
   minimal environment, and openai, httpx, PIL, and pytest were absent
   from loaded modules.
 
-Mac results only; not GitHub CI or Linux container validation.
+Mac results only; not GitHub CI. Linux/container install and Linux Python
+3.11 compatibility were since verified on the VPS (§4C–§4D).
 
 Fresh environment, remote lock only — proves the candidate lock installs
 and the staged boundary imports without the full project set.
@@ -211,28 +263,35 @@ Observed (owner Mac, corrected 15-pin lock) — loaded-module check only,
 distinct from package installation: printed
 `PASS: remote application imports with minimal dependencies.` with no
 assertion error; openai, httpx, PIL, and pytest were absent from loaded
-modules. Mac result only; not GitHub CI or Linux container validation.
-This still does not verify canonical serving, startup validation, the
-container image (§4C), Linux Python 3.11 compatibility, or egress (§4D).
+modules. Mac result only; not GitHub CI. Successful startup and canonical serving were verified separately in
+the VPS container (§4C–§4D). Docker inspection confirmed Network=none;
+loopback requests succeeded. No outbound connection attempt was tested,
+and deployment-network egress controls remain pending.
 
-### C. Pending container checks (require a container runtime)
+### C. Container checks (owner-executed on the VPS, October 29, 2026)
 
-None of these commands have been executed; all commands in §4C and §4D
-are illustrative only. They require Docker (or an equivalent). The base is
-pinned to the observed index digest (§2); no further `FROM` replacement is
-needed before building. Docker, Podman, and Colima were not found on the
-owner Mac PATH. Docker 29.8.1 and Buildx v0.37.1 were confirmed on
-the x86_64 VPS. Planned container validation will use a dedicated temporary
-workspace there; no Mac runtime installation is required.
+Executed on the x86_64 VPS (Docker 29.8.1, Buildx v0.37.1) from source
+commit `dcc56cf028548289ac367b32a4e606a1d56b47da`. The linux/amd64 image
+`axle-h9-validation:dcc56cf` built successfully from the pinned Python base;
+build-time dependency installation and `pip check` passed. The test container
+ran with `--network=none`, a read-only filesystem, all capabilities dropped,
+no-new-privileges, 256 MiB memory, 0.5 CPU, PID limit 64, restart disabled,
+no published ports, no host mounts, and disposable synthetic configuration.
+Commands below are illustrative examples of the same checks, not exact
+transcripts. Docker, Podman, and Colima were not found on the owner Mac PATH;
+no Mac runtime installation was required.
 
-Build (from the workspace root):
+Build (from the workspace root; illustrative — the executed build produced
+`axle-h9-validation:dcc56cf` for linux/amd64):
 
 ```sh
 docker build -f Dockerfile.remote -t axle-remote:h9 .
 ```
 
-Run with runtime-only config (publish to loopback for local checks only;
-generate a fresh disposable token for these checks, not a reviewer token):
+Run with runtime-only config. Illustrative published-port form only (not
+executed as written — the executed validation used `--network=none` with no
+published ports and exec plus loopback only; generate a fresh disposable
+token for these checks, not a reviewer token):
 
 ```sh
 docker run -d --name axle-h9 \
@@ -242,12 +301,21 @@ docker run -d --name axle-h9 \
 docker ps --filter name=axle-h9
 ```
 
+Observed (owner-executed, VPS): the executed test container ran with network
+none, read-only filesystem, all capabilities dropped, no-new-privileges,
+256 MiB memory, 0.5 CPU, PID limit 64, restart disabled, no published ports,
+no host mounts, and disposable synthetic configuration.
+
 1. **Non-root identity** — expect `uid=65532`:
 
    ```sh
    docker exec axle-h9 id
    docker inspect axle-h9 --format '{{.Config.User}}'
    ```
+
+   Observed (owner-executed, VPS): inspect showed the container running with
+   `User=65532`, `Network=none`, and `ReadOnly=true`; `id` confirmed UID/GID
+   65532.
 
 2. **Runtime contents** — expect exactly the five modules plus the probe,
    and no local-only packages:
@@ -260,13 +328,24 @@ docker ps --filter name=axle-h9
    docker exec axle-h9 python -c "import axle_hackathon.app"  # expect ModuleNotFoundError
    ```
 
+   Observed (owner-executed, VPS): in-container assertions passed — Linux
+   Python 3.11; exactly five application modules; checked source/probe files
+   root-owned and non-writable; installed runtime exactly matched all 15 pins
+   excluding packaging tools; remote import did not load openai, httpx, PIL,
+   or pytest.
+
 3. **Health** — explicit allowed `Host`, expect `{"status":"ok",
-   "synthetic_only":true}` and `cache-control: no-store`:
+   "synthetic_only":true}`:
 
    ```sh
    curl -si -H 'Host: h9-local.test' http://127.0.0.1:8000/api/health
    docker inspect axle-h9 --format '{{.State.Health.Status}}'
    ```
+
+   Observed (owner-executed, VPS): the container was running and healthy; the
+   container-local health probe passed. Published-port `curl` lines above
+   are illustrative only; executed checks used in-container loopback via exec
+   (see §4D).
 
 4. **Authentication rejection** — missing/wrong token, expect 401 with
    `WWW-Authenticate: Bearer` and `no-store`:
@@ -275,6 +354,10 @@ docker ps --filter name=axle-h9
    curl -si -H 'Host: h9-local.test' -H 'Content-Type: application/json' \
      -d '{}' http://127.0.0.1:8000/api/v1/axle/evaluate
    ```
+
+   Observed (owner-executed, VPS): missing/wrong token returned 401 over
+   in-container loopback. Illustrative host `curl` only; executed checks used
+   exec plus loopback.
 
 5. **Host/Origin rejection** — expect 403 fixed bodies, no reflection:
 
@@ -286,6 +369,10 @@ docker ps --filter name=axle-h9
      -d '{}' http://127.0.0.1:8000/api/v1/axle/evaluate
    ```
 
+   Observed (owner-executed, VPS): disallowed Host and Origin returned 403
+   over in-container loopback. Illustrative host `curl` only; executed checks
+   used exec plus loopback.
+
 6. **Disabled routes** — each expect 404 `{"detail":"Not Found"}`:
 
    ```sh
@@ -294,10 +381,15 @@ docker ps --filter name=axle-h9
    done
    ```
 
+   Observed (owner-executed, VPS): tested disabled paths returned GET 404
+   over in-container loopback. Illustrative host loop only; executed checks
+   used exec plus loopback.
+
 7. **Canonical results** — three evaluations over the complete synthetic
    case; expect NEGOTIATE / ACCEPT / NEED_MORE_INFORMATION with gaps
    `60.00` / `0.00` / null and unchanged `$290.00` costs / `$130.00`
-   surplus. Save the body to a file per target (example for `$2.00`):
+   surplus. Save the body to a file per target (example for `$2.00`;
+   illustrative host form — executed checks used in-container loopback):
 
    ```sh
    cat > /tmp/h9-eval.json <<'EOF'
@@ -319,16 +411,28 @@ docker ps --filter name=axle-h9
    `profile_id: synthetic-box-001`, `model_invoked: false`, and
    `cache-control: no-store` on each response.
 
-8. **Shutdown** — stop, verify the endpoint is down, remove:
+   Observed (owner-executed, VPS): actual loopback HTTP tests passed —
+   target 2.00 → NEGOTIATE, revenue 480.00, gap 60.00; target 1.75 → ACCEPT,
+   revenue 420.00, gap 0.00; unknown target → NEED_MORE_INFORMATION,
+   revenue/gap null. Costs remained 290.00; surplus 130.00; loaded RPM 2.33,
+   all-mile RPM 1.75. Tested responses carried `Cache-Control: no-store`.
+
+8. **Shutdown** — stop, verify the endpoint is down, remove (illustrative;
+   use `--timeout`, not deprecated `--time`):
 
    ```sh
-   docker stop axle-h9
+   docker stop --timeout 10 axle-h9
    curl -s -o /dev/null -w '%{http_code}\n' -H 'Host: h9-local.test' http://127.0.0.1:8000/api/health || echo 'endpoint down (expected)'
    docker rm axle-h9
    docker ps -a --filter name=axle-h9
    ```
 
-### D. Optional network-none container test (exec + loopback only)
+   Observed (owner-executed, VPS): the test container stopped with
+   `ExitCode=0`, was removed, and the exact-name container listing was empty.
+   The validation image and temporary VPS source workspace remain; cleanup
+   did not remove them.
+
+### D. Network-none container test (owner-executed on the VPS, October 29, 2026)
 
 Purpose: prove the staged app serves health/evaluation with no container
 egress path, using in-container exec over loopback. This is NOT deployment
@@ -336,6 +440,16 @@ egress policy and NOT external proxy connectivity: production still needs a
 proxy in front (TLS, Host preservation, timeouts) and a platform-level
 deny-by-default egress rule, neither of which this test configures or
 verifies.
+
+Observed (owner-executed, VPS): executed with `--network=none`, read-only
+filesystem, all capabilities dropped, no-new-privileges, 256 MiB memory,
+0.5 CPU, PID limit 64, restart disabled, no published ports, no host mounts,
+and disposable synthetic configuration. The container-local health probe
+passed, loopback health passed, and authenticated canonical loopback
+evaluations passed (NEGOTIATE / ACCEPT / NEED_MORE_INFORMATION with the
+economics recorded in §4C item 7, including 401/403/404 and `no-store`
+behavior). Illustrative example below shows the same shape; it is not an
+exact transcript.
 
 ```sh
 docker run -d --name axle-h9-nonone --network=none \
@@ -372,12 +486,14 @@ assert ev['estimated_operating_cost'] == '290.00', ev
 assert ev['estimated_operating_surplus_after_allocated_costs'] == '130.00', ev
 print('loopback evaluate ok')
 EOF
-docker stop axle-h9-nonone && docker rm axle-h9-nonone
+docker stop --timeout 10 axle-h9-nonone && docker rm axle-h9-nonone
 ```
 
 Expected: the health probe, loopback health, and authenticated canonical
-evaluation all succeed with `--network=none`. A pass here does not approve
-deployment networking; see §5 egress row.
+evaluation all succeed with `--network=none`. Observed (owner-executed, VPS):
+they did, under the hardened constraints above. A pass here does not approve
+deployment networking; see §5 egress row. Deployment-network egress controls
+remain pending.
 
 ## 5. Proposed Coolify configuration (all unresolved until approved)
 
@@ -407,13 +523,16 @@ decisions.
 
 ## 6. Stop / rollback procedure
 
-Deployment has not occurred; this procedure applies only to a future
-approved deployment.
+Public deployment has not occurred; this procedure applies only to a future
+approved deployment. The VPS validation container was already stopped
+(`ExitCode=0`) and removed; the validation image and temporary VPS source
+workspace remain.
 
 - **Stop:** stop the dedicated remote service through Coolify (or
-  `docker stop` for local checks). Verify no remote container remains
-  (`docker ps`), health no longer returns the application success response,
-  and evaluation is unavailable. Leave production workloads untouched.
+  `docker stop --timeout 10` for local checks; `--time` is deprecated).
+  Verify no remote container remains (`docker ps`), health no longer returns
+  the application success response, and evaluation is unavailable. Leave
+  production workloads untouched.
 - **Proxy behavior while stopped:** a running reverse proxy in front of a
   stopped backend may return `502`/`503` or a maintenance page. A proxy
   error response is compatible with a stopped backend, not evidence the app
@@ -428,15 +547,21 @@ approved deployment.
 ## 7. Approval boundary (explicit)
 
 No publication, reviewer access, or deployment is approved by this
-candidate. Before any exposure beyond loopback, the owner must explicitly
-approve: the pinned base-image digest plus image pull/build, Linux
-dependency compatibility, container execution, and security-check
-evidence, the dedicated public hostname, TLS and proxy configuration
-(Host preservation, timeouts, body limits, logging), resource limits,
-restart policy, egress deny-by-default with evidence, reviewer-token
-issuance/rotation, and the §4A–§4C evidence for this exact branch. H8
-lists the remaining required controls; none are closed by this packaging
-slice.
+candidate. VPS evidence now covers, for source commit
+`dcc56cf028548289ac367b32a4e606a1d56b47da` (image
+`axle-h9-validation:dcc56cf`, linux/amd64): the pinned base-image digest,
+image build, Linux dependency compatibility, hardened container execution and
+inspection, health/container-local probe, in-container runtime assertions,
+loopback canonical/auth/host/origin/disabled-route/`no-store` checks, and
+clean container stop/remove. Before any exposure beyond loopback, the owner
+must still explicitly approve: the dedicated public hostname, TLS and proxy
+configuration (Host preservation, timeouts, body limits, logging),
+resource limits, restart policy, egress deny-by-default with evidence,
+reviewer-token issuance/rotation, vulnerability assessment, broader
+load/abuse testing, complete build-context allowlist verification, and the
+§4A–§4D evidence for the exact deployment branch/commit. H8 lists the
+remaining required controls; none are closed by this packaging slice beyond
+the VPS checks above.
 
 ## 8. Unverified assumptions and remaining requirements
 
@@ -446,11 +571,14 @@ slice.
   `sha256:65a93d69fa75478d554f4ad27c85c1e69fa184956261b4301ebaf6dbb0a3543d`
   (linux/amd64 manifest digest observed:
   `sha256:83f339c1be6340ae1096010fdccf6552ac932d8f410d45d206014916bdf37e48`).
-  Image pull/build, Linux dependency compatibility, container execution,
-  and security checks remain pending. Registry metadata inspection is not
-  an image vulnerability assessment.
+  Image build (linux/amd64 `axle-h9-validation:dcc56cf`), Linux dependency
+  compatibility, and container execution verified on the VPS on October 29,
+  2026. Image vulnerability assessment remains pending. Registry metadata
+  inspection is not an image vulnerability assessment.
 - Which ignore file the platform builder honors
   (`Dockerfile.remote.dockerignore` vs root `.dockerignore`): unverified.
+  Complete build-context allowlist verification remains pending: a small
+  transferred context alone does not prove its exact contents.
 - Corrected `requirements.remote.lock.txt` (15 pins): Mac clean install,
   `pip check` (“No broken requirements found”), exact 15-pin installed-set
   match (package-installation checks), and clean import with openai, httpx,
@@ -458,11 +586,24 @@ slice.
   verified on Mac (§4B). History: owner Mac clean install of the 14-pin
   candidate succeeded and `pip check` passed, selecting
   opentelemetry-api==1.45.1 transitively and revealing the missing
-  explicit pin. Linux/container install and Linux Python 3.11
-  compatibility: pending.
-- All container checks (§4C) and the optional network-none probe (§4D):
-  pending; Docker, Podman, and Colima were not found on the owner Mac PATH.
+  explicit pin. Linux container install and Linux Python 3.11 compatibility:
+  verified on the VPS on October 29, 2026 (§4C–§4D) — build-time install and
+  `pip check` passed, installed runtime exactly matched all 15 pins excluding
+  packaging tools, and remote import did not load openai/httpx/PIL/pytest.
+- Container checks (§4C) and the network-none probe (§4D): executed on the
+  x86_64 VPS on October 29, 2026 (Docker 29.8.1, Buildx v0.37.1; source
+  commit `dcc56cf028548289ac367b32a4e606a1d56b47da`; image
+  `axle-h9-validation:dcc56cf`): hardened network-none container ran,
+  inspected running/healthy with `User=65532`, `Network=none`,
+  `ReadOnly=true` and UID/GID 65532, container-local probe passed,
+  in-container runtime assertions passed, loopback canonical/auth/host/origin/
+  disabled-route/`no-store` checks passed, and the container stopped with
+  `ExitCode=0`, was removed, leaving the exact-name listing empty. The image
+  and temporary VPS source workspace remain. Docker, Podman, and Colima were
+  not found on the owner Mac PATH; no Mac runtime installation was required.
 - Every Coolify row in §5: unresolved; no hostname, token, TLS, proxy,
   logging, limits, restart, or egress decisions made.
-- H8 remaining controls (WAF, audit logging, abuse defense beyond one
-  process, load/soak testing, security review): still required.
+- H8 remaining controls still required, including public deployment and
+  external client/proxy connectivity, TLS, proxy timeouts/body limits,
+  infrastructure logging review, deployment-network egress controls,
+  vulnerability assessment, and broader load/abuse testing.
