@@ -1,0 +1,97 @@
+# H9 minimal remote-runtime image for axle_hackathon.remote_app:app (review candidate).
+#
+# Serves only GET /api/health and POST /api/v1/axle/evaluate. No docs, no model,
+# no storage. H8 behavior, canonical economics, and H1-H7 functionality are
+# preserved; this file stages runtime files only and changes no app behavior.
+#
+# Base image pinned to the owner-observed registry digest (tag+digest pin).
+#   Owner queried the registry from the x86_64 VPS on October 29, 2026.
+#   Tag existence and linux/amd64 availability were confirmed:
+#     index digest (multi-platform OCI index, pinned below):
+#       sha256:65a93d69fa75478d554f4ad27c85c1e69fa184956261b4301ebaf6dbb0a3543d
+#     linux/amd64 manifest digest (observed, not pinned):
+#       sha256:83f339c1be6340ae1096010fdccf6552ac932d8f410d45d206014916bdf37e48
+#   Python 3.11+ is required (remote_app uses asyncio.timeout).
+#   Pending: image pull/build, Linux dependency compatibility, container
+#   execution, and security checks. Registry metadata inspection is not an
+#   image vulnerability assessment.
+FROM python:3.11.14-slim-bookworm@sha256:65a93d69fa75478d554f4ad27c85c1e69fa184956261b4301ebaf6dbb0a3543d
+
+# Deterministic, log-friendly runtime. No secrets or production config here.
+ENV PYTHONDONTWRITEBYTECODE=1 \
+    PYTHONUNBUFFERED=1 \
+    PIP_NO_CACHE_DIR=1 \
+    PIP_DISABLE_PIP_VERSION_CHECK=1
+
+WORKDIR /app
+
+# Remote-runtime candidate lock only. The full project dependency set
+# (requirements.lock.txt, pyproject editable install) is deliberately NOT
+# installed: no openai, httpx, Pillow, pytest, or other local-only packages.
+COPY requirements.remote.lock.txt /app/requirements.remote.lock.txt
+RUN pip install --no-cache-dir --requirement /app/requirements.remote.lock.txt \
+    && pip check
+
+# Unprivileged user. UID 65532 (numeric, non-root). Group 65532 is the
+# user's primary group; staged application files are root-owned below so the
+# runtime process does not own its application source. The container runs as
+# numeric UID 65532 below.
+RUN groupadd --gid 65532 appgroup \
+    && useradd --uid 65532 --gid 65532 --no-create-home --shell /usr/sbin/nologin appuser
+
+# Minimal deterministic module closure. These five files are the complete app
+# surface: remote_app.py plus its axle_api/schemas/economics imports and the
+# package marker. Explicitly NOT copied: app.py, web.py, meta_agent.py,
+# vision.py, external_agent.py, carrier.html, tests, fixtures, browser assets,
+# screenshots, docs, or any other source. PYTHONPATH exposes the staged package.
+# Root-owned and readable/executable as needed by UID 65532; the runtime
+# process does not own its application source.
+COPY --chown=0:0 src/axle_hackathon/__init__.py /app/src/axle_hackathon/__init__.py
+COPY --chown=0:0 src/axle_hackathon/remote_app.py /app/src/axle_hackathon/remote_app.py
+COPY --chown=0:0 src/axle_hackathon/axle_api.py /app/src/axle_hackathon/axle_api.py
+COPY --chown=0:0 src/axle_hackathon/schemas.py /app/src/axle_hackathon/schemas.py
+COPY --chown=0:0 src/axle_hackathon/economics.py /app/src/axle_hackathon/economics.py
+COPY --chown=0:0 deploy/remote_healthcheck.py /app/deploy/remote_healthcheck.py
+RUN chmod -R a+rX /app/src/axle_hackathon /app/deploy/remote_healthcheck.py
+ENV PYTHONPATH=/app/src
+
+# No AXLE_API_TOKEN, no AXLE_API_ALLOWED_HOSTS, no model keys, and no hostname
+# are baked in. All runtime configuration MUST be injected at container start;
+# startup fails closed without valid values (see H8 design).
+
+USER 65532
+
+EXPOSE 8000
+
+# In-container health probe: stdlib-only script, bounded 5s socket timeout plus
+# the 5s HEALTHCHECK timeout below, explicit Host from runtime
+# AXLE_API_ALLOWED_HOSTS. Loopback TCP is transport only; the app still
+# enforces its allowlist against the Host header (no localhost bypass, no
+# wildcard). Docker retries failures; see deploy/remote_healthcheck.py.
+HEALTHCHECK --interval=30s --timeout=5s --start-period=15s --retries=3 \
+    CMD ["python", "/app/deploy/remote_healthcheck.py"]
+
+# Single Uvicorn worker serving plain HTTP to the platform proxy (TLS is
+# terminated at the proxy, never here; bind 0.0.0.0 is container-internal and
+# the app must accept connections only from the proxy over a private network).
+#   --workers 1        exactly one worker (H8 limiter is per-process; N workers
+#                      would multiply effective quota by N).
+#   (no --reload)      reload is never enabled in this image.
+#   --lifespan on      enforce H8 startup config validation; bad config fails
+#                      container start instead of serving.
+#   --no-proxy-headers proxy-header processing explicitly disabled; the app
+#                      ignores X-Forwarded-* and derives nothing from them.
+#   --no-access-log    Uvicorn access log disabled.
+# REMAINING LOG RISKS (must be verified at the platform before deployment):
+# Uvicorn still emits error/startup logs that may include unhandled-exception
+# tracebacks, and the platform proxy/load balancer may log access metadata
+# (timestamps, Host, paths, statuses). Disabled access logging does not imply
+# redacted infrastructure logs. Verify proxy log settings, retention, and that
+# no request bodies, tokens, or submitted facts are recorded.
+CMD ["python", "-m", "uvicorn", "axle_hackathon.remote_app:app", \
+     "--host", "0.0.0.0", \
+     "--port", "8000", \
+     "--workers", "1", \
+     "--lifespan", "on", \
+     "--no-proxy-headers", \
+     "--no-access-log"]

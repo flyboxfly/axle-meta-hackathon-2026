@@ -155,3 +155,12 @@ $130 estimated operating surplus after allocated costs. Model prose was not
 validated or displayed. This later evidence supersedes earlier pending local
 round-trip statements; remote/native integration and repeated reliability remain
 unverified. See H7_REVIEW.md. Server stopped cleanly after verification.
+
+## H9 deployment packaging (review candidate, not deployed)
+
+Proposes a minimal container package for the isolated `remote_app` boundary
+only: remote candidate lock, `Dockerfile.remote`, health probe, offline
+packaging tests, and reviewer-run validation steps. No application source
+changed, no image built, no deployment performed. See
+[deployment doc](docs/H9_DEPLOYMENT.md); owner approval required before any
+publication or deployment.
