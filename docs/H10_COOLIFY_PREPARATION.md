@@ -1,3 +1,5 @@
+> Historical preparation snapshot. Its proposal-only status, hostname, pending approvals, and unconfigured-state statements describe the earlier stage, not the current deployment. For owner-observed October 30, 2026 deployment results and remaining limitations, see [H10 Deployment Evidence](H10_DEPLOYMENT_EVIDENCE.md). The deployed hostname is axle-api-demo.flyboxfly.com. Retain the historical text below as planning history.
+
 # H10 Coolify Preparation — Deployment Proposal Only (Not Deployed)
 
 Status: proposal only for the competition application. No Coolify
