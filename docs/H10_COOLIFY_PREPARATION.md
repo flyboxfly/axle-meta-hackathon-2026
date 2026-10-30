@@ -1,22 +1,34 @@
 # H10 Coolify Preparation — Deployment Proposal Only (Not Deployed)
 
-Status: proposal only. No Coolify resource created, no secret generated or
-stored, no DNS changed, no deployment or public exposure performed, no
-commands or tests run by Muse in authoring this document. No application
-source or existing file changed; this document is the only H10 artifact.
-Owner read-only VPS and Mac checks occurred during H10 and supplied the
-§1 evidence.
+Status: proposal only for the competition application. No Coolify
+application resource created, no secret generated or stored, no DNS
+changed, no deployment or public exposure performed, no competition
+application resource or public service exists. H10 PR #9 merged as
+`62b9510e72991a14b02b42edfbe913e77afd7d01`; publication and
+documentation merge were explicitly approved. Network creation/test and
+destination registration/proxy attachment were explicitly approved and
+completed (see §1, §4). This follow-up’s publication and merge are not
+yet approved. No new tests ran for the documentation-only H10 change;
+the prior 157 passing tests remain H9 post-merge evidence. No
+application source changed; this document is the only artifact in this
+follow-up. Owner read-only VPS and Mac checks during H10 supplied the
+original §1 evidence; owner-observed evidence from October 29, 2026
+supplied the network/destination evidence. Muse ran no commands in
+authoring.
 
-- Expected branch: `h10-coolify-preparation`.
-- Base/source baseline: full SHA
+- Expected branch: `h10-network-evidence`.
+- Base: merged H10 commit, full SHA
+  `62b9510e72991a14b02b42edfbe913e77afd7d01` (H10 PR #9 merge).
+- H10 source baseline (historical): full SHA
   `c28666b92e7fa71a43e5c0c8a8745c125779a2d4`.
-  The final deployment SHA must be reselected after any approved H10 merge.
+  The final deployment SHA must be reselected after any approved merge
+  of this follow-up.
 - Predecessors: [H8 remote design](H8_REMOTE_DESIGN.md) (enforced boundary),
   [H9 deployment packaging](H9_DEPLOYMENT.md) (image, lock, probe, VPS
   validation). H8/H9 behavior, canonical economics, and H1–H7 functionality
   are preserved.
 
-## 0. Proposed values (all unapproved, unconfigured)
+## 0. Proposed values (application rows unapproved, unconfigured; network/destination rows approved and completed)
 
 | Setting | Proposed value |
 |---|---|
@@ -34,6 +46,8 @@ Owner read-only VPS and Mac checks occurred during H10 and supplied the
 | Health check | Preserve image Python HEALTHCHECK with explicit allowed Host (current official docs describe Dockerfile-check precedence; installed-version behavior pending verification) |
 | Restart policy | `unless-stopped` (proposed; confirm platform support) |
 | App log rotation | Bounded 10m / 3 files (proposed; provisioning method and actual logging behavior unresolved) |
+| Docker network | `axle-meta-internal` (approved and completed; ID `d28f3e70becc978e724f7014d7ac3261557c9309243be832e527f7d08b86cfd0`, driver `bridge`, Internal=true, IPv6=false; see §1, §4) |
+| Destination | `Axle Meta Internal` on server `localhost` using `axle-meta-internal` (approved and completed; reused the existing internal network; see §1) |
 
 Official documents below are current guidance only, not proof of behavior
 on the installed version:
@@ -44,8 +58,10 @@ on the installed version:
 
 ## 1. Evidence versus proposed settings versus unresolved checks
 
-Owner-observed evidence (as supplied; Muse ran no commands in authoring;
-owner read-only VPS and Mac checks occurred during H10):
+Owner-observed evidence (as supplied; Muse ran no commands in authoring).
+
+Original H10 evidence (preserved; owner read-only VPS and Mac checks
+during H10):
 
 - Coolify image `coollabsio/coolify:4.5.3`, running.
 - Running Traefik `3.6.25`, linux/amd64.
@@ -57,21 +73,100 @@ owner read-only VPS and Mac checks occurred during H10):
 - Dashboard shows “Changes pending” / proxy restart required. Pending
   changes are unexplained; do not restart the shared proxy.
 - H9 isolated Linux validation succeeded; test container removed.
-- Owner post-merge tests: 157 passed in 3.80s.
+- Owner post-merge tests: 157 passed in 3.80s. These remain H9
+  post-merge evidence; no new tests ran for the documentation-only H10
+  change.
 - No competition service, hostname configuration, token issuance, DNS
   change, or public deployment has occurred.
 
-Proposed but not configured: every row in §0, including the hostname,
-resource creation, secrets, DNS, TLS/proxy behavior, health-check handling,
-custom Docker options, restart policy, and log rotation.
+H10 merge evidence (publication and documentation merge explicitly
+approved):
+
+- H10 PR #9 merged as
+  `62b9510e72991a14b02b42edfbe913e77afd7d01`.
+
+Network creation evidence (explicitly approved; October 29, 2026):
+
+- Name: `axle-meta-internal`.
+- ID: `d28f3e70becc978e724f7014d7ac3261557c9309243be832e527f7d08b86cfd0`.
+- Driver: `bridge`.
+- Internal=true.
+- IPv6=false.
+- Initially zero attached containers.
+
+Temporary two-container test evidence (explicitly approved; October 29,
+2026; BEFORE shared-proxy attachment):
+
+- Used existing `axle-h9-validation:dcc56cf` image.
+- Docker image inspect returned ID:
+  `sha256:6979054e21a4ef88cfcac087c25379f9e0c031091dc2333d95b42d543544b81b`,
+  OS=linux, Architecture=amd64, User=65532. Treat that value as the
+  reported Docker image ID; do not confuse it with the pinned upstream
+  Python base digest.
+- API container: `axle-h10-network-api`.
+- Client container: `axle-h10-network-client`.
+- API used only `axle-meta-internal`, disposable synthetic
+  configuration, no published ports, no mounts, read-only filesystem,
+  dropped capabilities, no-new-privileges, 256m / 0.5 CPU / 64 PIDs,
+  restart=no.
+- Peer client health check passed: HTTP 200, expected synthetic JSON,
+  `Cache-Control: no-store`.
+- API `/proc/net/route` showed zero IPv4 default-route entries.
+- One API outbound TCP attempt to 1.1.1.1:443, timeout 2 seconds,
+  failed with OSError errno=101 (network unreachable).
+- No application payload was sent in that connection attempt.
+- Client auto-removed.
+- API stopped with ExitCode=0 and was removed.
+- Exact-name listing showed neither temporary container.
+- Network inspection after cleanup showed zero attached containers.
+
+Coolify destination registration and proxy attachment evidence
+(separately explicitly approved; October 29, 2026):
+
+- Destination name: `Axle Meta Internal`.
+- Docker network: `axle-meta-internal`.
+- Server: `localhost`.
+- Registration reused the existing internal network.
+- After registration: Internal=true, IPv6=false,
+  AttachedContainers=1, sole container=`coolify-proxy`.
+- Proxy Status=running.
+- Proxy StartedAt=2026-10-17T12:09:14.791610765Z.
+- Proxy networks: `coolify` and `axle-meta-internal`.
+- Evidence supports attachment without a proxy restart.
+- Shared-proxy “Changes pending” remains unexplained and untouched.
+
+Explicit limits (do not over-claim):
+
+- Peer HTTP test occurred BEFORE shared-proxy attachment.
+- No HTTP request from Traefik to the API has been demonstrated.
+- No post-attachment API egress test occurred.
+- One failed TCP attempt and no IPv4 default route do not prove all
+  outbound access is blocked.
+- Host-gateway services, peer/proxy access, DNS behavior, and any
+  indirect outbound path remain unverified.
+- Internal-network registration/attachment is verified on this
+  installation; application deployment behavior is not.
+
+Approved and completed: H10 documentation publication/merge, network
+creation/test, and destination registration/proxy attachment.
+
+Proposed but not configured: every application row in §0, including the
+hostname, app resource creation, secrets, DNS, TLS/proxy behavior,
+health-check handling, custom Docker options, restart policy, and log
+rotation. No competition application resource or public service exists.
 
 Unresolved until separately authorized and evidenced: effective proxy
 settings from all sources; installed-version support for custom Docker
 options, restart policy, and Dockerfile-check precedence; TLS, Host/
 Authorization/Origin forwarding, redirects, body limits, timeouts, error
-shapes, and logging behavior; build-context allowlist contents; egress
-controls; vulnerability/abuse posture; representative load; the unexplained
-pending proxy changes; and the final deployment SHA.
+shapes, and logging behavior; build-context allowlist contents;
+application egress behavior (host-gateway services, peer/proxy access,
+DNS behavior, indirect outbound paths; no post-attachment API egress
+test; no Traefik-to-API HTTP demonstration);
+vulnerability/abuse posture; representative load; the unexplained
+pending proxy changes; app resource creation, reviewer secrets, DNS,
+public deployment, build-context verification, and remaining
+proxy/TLS/logging checks; and the final deployment SHA.
 
 ## 2. Runtime-only token provisioning and revocation (procedure only)
 
@@ -148,18 +243,34 @@ separate authorization; none is verified in H10.
 - `--network=none` (H9 §4D) proved loopback serving with no egress path; it
   is not a deployable proxy-network solution because the proxy must reach
   the app.
-- Scoped proposal: attach `axle-meta-hackathon-api` only to the minimum
-  proxy-reachable network required for ingress; no published host ports; no
-  host mounts; read-only root filesystem, all capabilities dropped,
-  no-new-privileges, PID limit (§0 options, support unverified). The app
-  needs no outbound traffic for evaluation, so deny-by-default egress is
-  preferred, but the provisioning method on this platform is unresolved
-  and remains a deployment blocker. Unverified or absent egress controls
-  do not satisfy the existing H8/H9 requirements.
-- Required evidence (after authorization): generated container/network
-  inspection showing exactly the expected attachments and options; a bounded
-  disposable-exec check that ingress from the proxy succeeds while outbound
-  attempts fail closed; no exfiltration payloads, no external writes.
+- Deployment network: `axle-meta-internal` (ID
+  `d28f3e70becc978e724f7014d7ac3261557c9309243be832e527f7d08b86cfd0`,
+  driver `bridge`, Internal=true, IPv6=false; approved and completed;
+  after destination registration AttachedContainers=1, sole
+  container=`coolify-proxy`, proxy networks `coolify` and
+  `axle-meta-internal`, attachment without a proxy restart; see §1).
+  Attach `axle-meta-hackathon-api` only to this network; no published
+  host ports; no host mounts; read-only root filesystem, all
+  capabilities dropped, no-new-privileges, PID limit (§0 options,
+  installed-version support for the application container unverified).
+  The app needs no outbound traffic for evaluation, so deny-by-default
+  egress is preferred. Pre-attachment peer evidence (HTTP 200 with
+  expected synthetic JSON and `no-store`, zero IPv4 default-route
+  entries, one failed TCP attempt to 1.1.1.1:443 with OSError
+  errno=101 and no payload sent) does not prove all outbound access is
+  blocked. Host-gateway services, peer/proxy access, DNS behavior, and
+  any indirect outbound path remain unverified; no post-attachment API
+  egress test occurred; no HTTP request from Traefik to the API has
+  been demonstrated. Internal-network registration/attachment is
+  verified on this installation; application deployment behavior is
+  not. Unverified or absent application egress controls do not satisfy
+  the existing H8/H9 requirements and remain a deployment blocker.
+- Required evidence (after authorization; do not repeat the completed
+  pre-attachment peer test): generated application container/network
+  inspection showing exactly the expected attachments and options; a
+  bounded post-attachment check that ingress from the proxy succeeds
+  while outbound attempts fail closed; no exfiltration payloads, no
+  external writes.
 - Do not recommend changing shared firewall or proxy settings without
   separate review, and never as part of creating this app. The unexplained
   pending proxy changes and restart requirement stay untouched.
@@ -268,10 +379,22 @@ Applies only to `axle-meta-hackathon-api` after an approved deployment.
 
 ## 9. Approval gates (each explicit; no gate implies the next)
 
-1. Publication: owner approves publishing branch
-   `h10-coolify-preparation` for review.
-2. Merge: owner approves merging H10 docs; reselect the final deployment
-   SHA afterward.
+Completed (explicitly approved):
+
+A. H10 documentation publication and merge: approved and completed (PR
+   #9 merged as
+   `62b9510e72991a14b02b42edfbe913e77afd7d01`).
+B. Network creation and temporary two-container test: explicitly
+   approved and completed (see §1).
+C. Coolify destination registration (`Axle Meta Internal`) and proxy
+   attachment: separately explicitly approved and completed (see §1).
+
+Pending (each explicit; no gate implies the next):
+
+1. This follow-up’s publication: owner approves publishing branch
+   `h10-network-evidence` for review. Not yet approved.
+2. This follow-up’s merge: owner approves merging this follow-up;
+   reselect the final deployment SHA afterward. Not yet approved.
 3. Coolify resource creation: owner approves creating the dedicated
    competition project/environment and `axle-meta-hackathon-api` with the
    §0 values (manual deploys; no auto/preview).
@@ -290,15 +413,31 @@ Applies only to `axle-meta-hackathon-api` after an approved deployment.
 
 ## 10. Remaining deployment blockers
 
-- All §9 approvals outstanding; no Coolify resource, secret, DNS record, or
-  deployment exists.
-- Final deployment SHA must be reselected after any approved H10 merge.
+- H10 documentation publication/merge, network creation/test, and
+  destination registration/proxy attachment are approved and completed.
+  This follow-up’s publication and merge are not yet approved.
+- No Coolify application resource, secret, DNS record, deployment,
+  competition application resource, or public service exists.
+- App resource creation, reviewer secrets, DNS, public deployment,
+  build-context verification, vulnerability assessment, representative
+  load, and remaining proxy/TLS/logging checks remain pending.
+- Final deployment SHA must be reselected after any approved merge of
+  this follow-up.
 - Hostname neither approved nor configured; TLS/proxy/logging/timeout/body
   limit behavior unverified with no confirmed defaults.
 - Installed-version support unverified for custom Docker options, restart
   policy, Dockerfile-check precedence, and app log-rotation provisioning.
 - Build-context allowlist contents and honored ignore file unverified.
-- Deployment-network egress controls unresolved; shared-proxy pending
-  changes unexplained (do not restart the shared proxy).
+- Application egress/deployment behavior unresolved:
+  internal-network registration/attachment is verified on this
+  installation; application deployment behavior is not. Peer HTTP test
+  occurred BEFORE shared-proxy attachment; no HTTP request from
+  Traefik to the API has been demonstrated; no post-attachment API
+  egress test occurred; one failed TCP attempt and no IPv4 default
+  route do not prove all outbound access is blocked; host-gateway
+  services, peer/proxy access, DNS behavior, and any indirect outbound
+  path remain unverified.
+- Shared-proxy pending changes unexplained (do not restart the shared
+  proxy).
 - Vulnerability assessment and representative-load verification pending;
   no installs or paid services authorized.
