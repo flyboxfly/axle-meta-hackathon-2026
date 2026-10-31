@@ -15,6 +15,8 @@ def create_app(inbox, *, webhook_secret: str, allowed_host: str, conversation=No
         raise ValueError('Explicit webhook secret required')
     if not _is_valid_hostname(allowed_host):
         raise ValueError('Exact allowed host required')
+    if len(set(inbox._bindings.values())) != len(inbox._bindings):
+        raise ValueError('One approved private-chat binding per carrier required')
     app = FastAPI(docs_url=None, redoc_url=None, openapi_url=None)
 
     @app.post('/telegram/webhook')
@@ -49,12 +51,17 @@ def create_app(inbox, *, webhook_secret: str, allowed_host: str, conversation=No
             if message['chat']['type'] != 'private' or message['from'].get('is_bot') is not False:
                 return reply(403, 'rejected')
             text = message.get('text')
+            message_id=message.get('message_id')
             if (conversation is not None and isinstance(text,str)
                     and text.split(' ',1)[0] in ('/start','/reply','/confirm','/edit','/save')):
                 if send is None or conversation.inbox is not inbox:
                     return reply(503,'unavailable')
                 with inbox._lock:
-                    claim = inbox.begin_flow(user,chat,data['update_id'])
+                    if inbox.duplicate_update(user,chat,data['update_id'],'flow'):
+                        return reply(200,'duplicate')
+                    if inbox.stale_message(user,chat,message_id):
+                        return reply(200,'stale')
+                    claim = inbox.begin_flow(user,chat,data['update_id'],message_id=message_id)
                     if claim is None:
                         return reply(200,'duplicate')
                     try:
@@ -81,15 +88,18 @@ def create_app(inbox, *, webhook_secret: str, allowed_host: str, conversation=No
                     return reply(400,'invalid_update')
                 if inbox.duplicate_update(user, chat, data['update_id'], action,command_id=command_id):
                     return reply(200, 'duplicate')
+                if inbox.stale_message(user,chat,message_id):
+                    return reply(200,'stale')
                 if action == 'evaluate':
                     access = inbox._active.get(carrier)
                     if access is None:
                         raise PermissionError()
                     snapshot = inbox.get(user, chat, access.token)
                     accepted = inbox.submit(user, chat, data['update_id'], action,
-                                            token=access.token, revision=snapshot.revision)
+                                            token=access.token, revision=snapshot.revision,message_id=message_id)
                 else:
-                    accepted = inbox.submit(user, chat, data['update_id'], action,command_id=command_id)
+                    accepted = inbox.submit(user, chat, data['update_id'], action,command_id=command_id,
+                                            message_id=message_id)
                     if conversation is not None:
                         conversation.clear(user,chat)
             return reply(200, 'queued' if accepted else 'duplicate')

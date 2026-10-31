@@ -10,16 +10,33 @@ from .pilot_memory import PilotMemory
 
 
 class PilotInbox(PilotMemory):
-    def begin_flow(self, user, chat, update_id):
+    def stale_message(self,user,chat,message_id):
+        with self._lock:
+            carrier=self._carrier(user,chat)
+            if type(message_id) is not int or not 0 < message_id < 2**63:
+                raise ValueError('Positive message ID required')
+            row=self._db.execute('SELECT message_id FROM pilot_message_order '
+                'WHERE carrier=? AND user_id=? AND chat_id=?',(carrier,user,chat)).fetchone()
+            return row is not None and message_id <= row[0]
+
+    def _record_order(self,carrier,user,chat,message_id):
+        if message_id is not None:
+            self._db.execute('INSERT OR REPLACE INTO pilot_message_order VALUES (?,?,?,?)',
+                             (carrier,user,chat,message_id))
+
+    def begin_flow(self, user, chat, update_id, *, message_id=None):
         """Durable at-most-one attempt for a volatile conversation transition."""
         with self._lock:
             carrier = self._carrier(user, chat)
             if self.duplicate_update(user,chat,update_id,'flow'):
                 return None
+            if message_id is not None and self.stale_message(user,chat,message_id):
+                return None
             if self._db.execute('SELECT count(*) FROM pilot_updates').fetchone()[0] >= 10000:
                 raise RuntimeError('Inbox capacity reached')
             claim = token_urlsafe(24)
             with self._db:
+                self._record_order(carrier,user,chat,message_id)
                 self._db.execute('INSERT INTO pilot_updates VALUES (?,?,?,?,?,?,?)',
                     (update_id,carrier,'flow',None,None,'processing',claim))
             return claim
@@ -61,8 +78,12 @@ class PilotInbox(PilotMemory):
                 carrier TEXT NOT NULL,user_id INTEGER NOT NULL,chat_id INTEGER NOT NULL,
                 command_id INTEGER NOT NULL,update_id INTEGER NOT NULL,status TEXT NOT NULL,
                 PRIMARY KEY(carrier,user_id,chat_id))''')
+            self._db.execute('''CREATE TABLE IF NOT EXISTS pilot_message_order (
+                carrier TEXT NOT NULL,user_id INTEGER NOT NULL,chat_id INTEGER NOT NULL,
+                message_id INTEGER NOT NULL,PRIMARY KEY(carrier,user_id,chat_id))''')
 
-    def submit(self, user, chat, update_id, action, *, token=None, revision=None, command_id=None) -> bool:
+    def submit(self, user, chat, update_id, action, *, token=None, revision=None, command_id=None,
+               message_id=None) -> bool:
         """True means durably recorded; False means duplicate, without another effect."""
         with self._lock:
             carrier = self._carrier(user, chat)
@@ -70,6 +91,8 @@ class PilotInbox(PilotMemory):
                 raise ValueError('Invalid update ID')
             if action not in ('evaluate', 'forget'):
                 raise ValueError('Unsupported inbox action')
+            if message_id is not None and self.stale_message(user,chat,message_id):
+                return False
             row = self._db.execute('SELECT carrier,action FROM pilot_updates WHERE update_id=?',
                                    (update_id,)).fetchone()
             if row:
@@ -86,6 +109,7 @@ class PilotInbox(PilotMemory):
                 self._clear(carrier)
                 self._pending_deletions.add(carrier)
                 with self._db:
+                    self._record_order(carrier,user,chat,message_id)
                     self._db.execute('INSERT OR REPLACE INTO pilot_privacy VALUES (?,?,?,?,?,?)',
                                      (carrier,user,chat,command_id,update_id,'queued'))
                     self._db.execute('INSERT OR IGNORE INTO pilot_deletions VALUES (?)',(carrier,))
@@ -104,6 +128,7 @@ class PilotInbox(PilotMemory):
             if self._db.execute('SELECT count(*) FROM pilot_updates').fetchone()[0] >= 10000:
                 raise RuntimeError('Inbox capacity reached')
             with self._db:
+                self._record_order(carrier,user,chat,message_id)
                 self._db.execute('INSERT INTO pilot_updates VALUES (?,?,?,?,?,?,NULL)',
                                  (update_id, carrier, action, revision, generation, 'queued'))
                 if action == 'forget':
