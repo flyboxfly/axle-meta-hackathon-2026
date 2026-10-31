@@ -49,3 +49,11 @@ def test_transport_failures_are_bounded_sanitized_and_single_attempt(kind):
         assert TOKEN not in str(exc.value) and 'invented-secret' not in str(exc.value)
         with pytest.raises(PermissionError):send(2,'invented')
     assert calls==[1]
+
+
+@pytest.mark.parametrize('chat',[None,[],{'id':True,'type':'private'},{'id':1.0,'type':'private'}])
+def test_malformed_chat_acknowledgement_is_never_success(chat):
+    with httpx.Client(transport=httpx.MockTransport(lambda request:response(200,json_value={
+            'ok':True,'result':{'message_id':1,'chat':chat}}))) as c:
+        with pytest.raises(RuntimeError,match='^Delivery uncertain; no automatic retry$'):
+            TelegramSender(c,TOKEN,allowed_chats={1},seconds=1)(1,'invented')

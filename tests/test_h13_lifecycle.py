@@ -116,3 +116,39 @@ def test_shutdown_wait_does_not_block_request_rejection(tmp_path,monkeypatch):
             assert request.result(timeout=.3).status_code==503
         finally:release.set()
         assert closing.result(timeout=1)['storage_released']
+
+
+def test_failed_construction_attempts_all_client_cleanup_and_sanitizes(tmp_path):
+    calls=[]
+    class Bad:
+        def close(self):calls.append('bad');raise RuntimeError('invented-secret')
+    class Good:
+        def close(self):calls.append('good')
+    with pytest.raises(RuntimeError,match='^Construction cleanup incomplete$'):
+        PilotLifecycle(tmp_path/'owned.sqlite3',{(1,1):'a'},
+            MemoryPolicy(version='test',processing_notice='Invented offline data'),
+            delegator_factory=lambda s:None,send=lambda *_:True,webhook_secret=SECRET,
+            allowed_host='testserver',global_limit=0,carrier_limit=1,provider_timeout=1,interval=1,
+            transport_clients=(Bad(),Good()))
+    assert calls==['bad','good']
+    life=owner(tmp_path,lambda s:None)
+    assert life.close(timeout=1)['storage_released']
+
+
+def test_shutdown_cleanup_failure_retains_storage_for_later_inspection(tmp_path):
+    life=owner(tmp_path,lambda s:None);calls=[]
+    class Client:
+        def close(self):
+            calls.append(1)
+            if len(calls)==1:raise RuntimeError('invented-private-detail')
+    life._clients.append(Client())
+    try:
+        with pytest.raises(RuntimeError,match='^Transport cleanup incomplete$'):
+            life.close(timeout=1)
+        assert not life.inbox._closed
+        with pytest.raises(RuntimeError,match='already has an owner'):
+            PilotInbox(tmp_path/'owned.sqlite3',{(1,1):'a'},life.inbox._policy)
+        assert life.close(timeout=1)['storage_released']
+        life.close(timeout=1)
+        assert len(calls)==2
+    finally:life.close(timeout=1)

@@ -34,9 +34,13 @@ class PilotLifecycle:
                 allowed_host=allowed_host,conversation=PilotConversation(self.inbox),send=send)
         except Exception:
             if self.provider is not None:self.provider.close()
+            cleanup_failed = False
             try:
-                for client in self._clients:client.close()
+                for client in self._clients:
+                    try:client.close()
+                    except Exception:cleanup_failed = True
             finally:self.inbox.close()
+            if cleanup_failed:raise RuntimeError('Construction cleanup incomplete') from None
             raise
 
     def start(self):

@@ -1,5 +1,7 @@
 # H13 injected HTTP adapters
 
+Follow-up: [adapter and cleanup review](H13_TRANSPORT_ASTRA_REVIEW.md).
+
 October 31, 2026. Baseline 7f18b6c. Fake HTTP transports and invented records only.
 
 MetaResponsesClient implements the narrow responses.create interface consumed by

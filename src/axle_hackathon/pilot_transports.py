@@ -48,8 +48,10 @@ class TelegramSender:
         message=result.get('result')
         if (result.get('ok') is not True or not isinstance(message,dict)
                 or type(message.get('message_id')) is not int or message['message_id']<=0
-                or message.get('chat',{}).get('id')!=chat
-                or message.get('chat',{}).get('type')!='private'):
+                or not isinstance(message.get('chat'),dict)
+                or type(message['chat'].get('id')) is not int
+                or message['chat']['id']!=chat
+                or message['chat'].get('type')!='private'):
             raise RuntimeError('Delivery uncertain; no automatic retry')
         return True
 
