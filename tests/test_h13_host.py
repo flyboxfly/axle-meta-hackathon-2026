@@ -58,3 +58,50 @@ def test_shutdown_runs_off_event_loop_and_rejects_new_http():
         await asyncio.wait_for(task,1)
         assert (await outgoing.get())['type']=='lifespan.shutdown.complete'
     asyncio.run(exercise())
+
+
+def test_cancelled_lifespan_closes_admission_and_owner(tmp_path):
+    life=owner(tmp_path,lambda s:None);host=PilotHost(life,shutdown_timeout=1)
+    async def exercise():
+        incoming=asyncio.Queue();started=asyncio.Event()
+        async def send(message):
+            if message['type']=='lifespan.startup.complete':started.set()
+        incoming.put_nowait({'type':'lifespan.startup'})
+        task=asyncio.create_task(host({'type':'lifespan'},incoming.get,send))
+        await asyncio.wait_for(started.wait(),1)
+        task.cancel()
+        with pytest.raises(asyncio.CancelledError):await task
+        async with httpx.AsyncClient(transport=httpx.ASGITransport(app=host),base_url='http://testserver') as c:
+            assert (await c.get('/')).status_code==503
+        assert life.inbox._closed
+    try:asyncio.run(exercise())
+    finally:life.close(timeout=1)
+
+
+def test_shutdown_task_survives_caller_cancellation():
+    entered,release=Event(),Event();calls=[]
+    class Owner:
+        def close(self,**kwargs):
+            calls.append(1);entered.set();assert release.wait(2)
+            return {'storage_released':True}
+    host=PilotHost(Owner(),shutdown_timeout=1);host._state='closing'
+    async def exercise():
+        task=asyncio.create_task(host.finish_shutdown())
+        try:
+            assert await asyncio.to_thread(entered.wait,1)
+            task.cancel()
+            with pytest.raises(asyncio.CancelledError):await task
+            assert not host._shutdown_task.cancelled()
+        finally:release.set()
+        assert all((await host.finish_shutdown()).values())
+        assert calls==[1]
+    asyncio.run(exercise())
+
+
+def test_startup_failure_sanitizes_error_and_releases_owner(tmp_path,monkeypatch):
+    life=owner(tmp_path,lambda s:None);host=PilotHost(life,shutdown_timeout=1)
+    def fail():raise ValueError('invented-private-detail')
+    monkeypatch.setattr(life,'start',fail)
+    with pytest.raises(RuntimeError,match='^Pilot startup failed$'):
+        with TestClient(host):pass
+    assert life.inbox._closed

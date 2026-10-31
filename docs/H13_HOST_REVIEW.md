@@ -1,5 +1,7 @@
 # H13 host lifespan and HTTP configuration candidate
 
+Follow-up: [host cancellation review](H13_HOST_ASTRA_REVIEW.md).
+
 October 31, 2026. Baseline draft 01b7239. Offline fake transports only.
 
 PilotHost is an explicit ASGI adapter around one PilotLifecycle. It rejects HTTP
