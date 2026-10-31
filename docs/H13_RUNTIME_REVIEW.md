@@ -1,5 +1,7 @@
 # H13 offline worker and attempt caps
 
+Follow-up: [bounded execution and scheduler](H13_EXECUTION_REVIEW.md).
+
 October 31, 2026. Based on draft PR #14 at 1a80374. Invented records and injected
 fake providers/senders only. No launcher, credentials, live requests or deployment.
 

@@ -2,6 +2,7 @@
 import asyncio
 import json
 import re
+from threading import BoundedSemaphore
 from contextlib import asynccontextmanager
 from .pilot_delivery import DeliveryPool
 
@@ -20,6 +21,8 @@ def create_app(inbox, *, webhook_secret: str, allowed_host: str, conversation=No
     if len(set(inbox._bindings.values())) != len(inbox._bindings):
         raise ValueError('One approved private-chat binding per carrier required')
     with inbox._lock:
+        if not hasattr(inbox, '_flow_slots'):inbox._flow_slots = BoundedSemaphore(2)
+        flow_slots = inbox._flow_slots
         if inbox._delivery_pool is None:inbox._delivery_pool=DeliveryPool(None)
         delivery=inbox._delivery_pool
     @asynccontextmanager
@@ -68,45 +71,50 @@ def create_app(inbox, *, webhook_secret: str, allowed_host: str, conversation=No
                     and text.split(' ',1)[0] in ('/start','/reply','/confirm','/edit','/save','/refresh')):
                 if send is None or conversation.inbox is not inbox:
                     return reply(503,'unavailable')
-                with inbox._lock:
-                    if inbox.duplicate_update(user,chat,data['update_id'],'flow'):
-                        return reply(200,'duplicate')
-                    if inbox.stale_message(user,chat,message_id):
-                        return reply(200,'stale')
-                    claim = inbox.begin_flow(user,chat,data['update_id'],message_id=message_id)
-                    if claim is None:
-                        return reply(200,'duplicate')
-                    try:
-                        answer = conversation.handle(user,chat,text)
-                    except (ValueError,KeyError,TypeError,PermissionError):
-                        try:
-                            answer = 'Please check your answer. No new confirmation was granted.\n' + conversation.handle(user,chat,'/refresh')
-                        except (ValueError,KeyError,TypeError,PermissionError):
-                            answer = 'Your intake needs a fresh start. Use /start while safely parked.'
-                    flow=inbox._conversation_states.get(inbox._carrier(user,chat))
-                    expected=flow['nonce'] if flow else None
-                def guard():
-                    with inbox._lock:
-                        carrier=inbox._carrier(user,chat)
-                        current=inbox._conversation_states.get(carrier)
-                        if (current['nonce'] if current else None)!=expected:
-                            raise ValueError('Conversation changed')
-                        if current is not None:
-                            if current['step']=='memory':
-                                if current['notice'].expires_at<=inbox._now():raise PermissionError()
-                            else:inbox._access(user,chat,current['token'])
-                        inbox.start_delivery(user,chat,data['update_id'],claim)
-                try:
-                    if len(answer)>4000:raise ValueError('Reply too large')
-                    await asyncio.to_thread(delivery.send,chat,answer,guard,send)
-                    inbox.finish(user,chat,data['update_id'],claim,success=True)
-                except (Exception, asyncio.CancelledError) as exc:
-                    try:inbox.finish(user,chat,data['update_id'],claim,success=False)
-                    except Exception:pass
-                    if isinstance(exc, asyncio.CancelledError):
-                        raise
+                if not flow_slots.acquire(blocking=False):
                     return reply(503,'unavailable')
-                return reply(200,'processed')
+                try:
+                    with inbox._lock:
+                        if inbox.duplicate_update(user,chat,data['update_id'],'flow'):
+                            return reply(200,'duplicate')
+                        if inbox.stale_message(user,chat,message_id):
+                            return reply(200,'stale')
+                        claim = inbox.begin_flow(user,chat,data['update_id'],message_id=message_id)
+                        if claim is None:
+                            return reply(200,'duplicate')
+                        try:
+                            answer = conversation.handle(user,chat,text)
+                        except (ValueError,KeyError,TypeError,PermissionError):
+                            try:
+                                answer = 'Please check your answer. No new confirmation was granted.\n' + conversation.handle(user,chat,'/refresh')
+                            except (ValueError,KeyError,TypeError,PermissionError):
+                                answer = 'Your intake needs a fresh start. Use /start while safely parked.'
+                        flow=inbox._conversation_states.get(inbox._carrier(user,chat))
+                        expected=flow['nonce'] if flow else None
+                    def guard():
+                        with inbox._lock:
+                            carrier=inbox._carrier(user,chat)
+                            current=inbox._conversation_states.get(carrier)
+                            if (current['nonce'] if current else None)!=expected:
+                                raise ValueError('Conversation changed')
+                            if current is not None:
+                                if current['step']=='memory':
+                                    if current['notice'].expires_at<=inbox._now():raise PermissionError()
+                                else:inbox._access(user,chat,current['token'])
+                            inbox.start_delivery(user,chat,data['update_id'],claim)
+                    try:
+                        if len(answer)>4000:raise ValueError('Reply too large')
+                        await asyncio.to_thread(delivery.send,chat,answer,guard,send)
+                        inbox.finish(user,chat,data['update_id'],claim,success=True)
+                    except (Exception, asyncio.CancelledError) as exc:
+                        try:inbox.finish(user,chat,data['update_id'],claim,success=False)
+                        except Exception:pass
+                        if isinstance(exc, asyncio.CancelledError):
+                            raise
+                        return reply(503,'unavailable')
+                    return reply(200,'processed')
+                finally:
+                    flow_slots.release()
             # Accept only explicit commands; no media fetch or unreviewed text intake.
             action = {'/evaluate': 'evaluate', '/forget': 'forget'}.get(message.get('text'))
             if action is None:
