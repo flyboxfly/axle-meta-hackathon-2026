@@ -1,0 +1,803 @@
+{
+  "openapi": "3.1.0",
+  "info": {
+    "title": "Axle synthetic evaluation API",
+    "version": "1.0",
+    "description": "Static reviewer contract. No native Muse integration or approval claimed. Synthetic-only; no booking, payments, model calls or application storage."
+  },
+  "servers": [
+    {
+      "url": "https://axle-api-demo.flyboxfly.com"
+    }
+  ],
+  "paths": {
+    "/api/health": {
+      "get": {
+        "operationId": "health",
+        "responses": {
+          "200": {
+            "description": "Health; not proof of evaluation authorization",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "status": {
+                      "const": "ok"
+                    },
+                    "synthetic_only": {
+                      "const": true
+                    }
+                  },
+                  "required": [
+                    "status",
+                    "synthetic_only"
+                  ]
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Host forbidden or Origin header present",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "detail": {
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "detail"
+                  ]
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "Internal error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "detail": {
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "detail"
+                  ]
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/axle/evaluate": {
+      "post": {
+        "operationId": "evaluate_confirmed_freight_opportunity",
+        "summary": "Evaluate carrier-confirmed synthetic freight facts",
+        "description": "Proposed Read classification, subject to Meta review. Obtain carrier review before setting facts_confirmed and benchmark.confirmed. Null target is an explicit confirmed unknown. No Origin header. No booking or persistence.",
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/AxleEvaluationRequest"
+              },
+              "example": {
+                "opportunity": {
+                  "equipment": "box_truck_26ft",
+                  "payout": "420",
+                  "loaded_miles": "180",
+                  "deadhead_miles": "60",
+                  "diesel_per_gallon": "4",
+                  "mpg": "10",
+                  "tolls": "20",
+                  "driver_cost": "80",
+                  "maintenance_per_mile": "0.10",
+                  "equipment_trip_cost": "50",
+                  "insurance_trip_allocation": "20",
+                  "operating_hours": "6",
+                  "schedule_feasible": true
+                },
+                "benchmark": {
+                  "target_all_mile_rpm": "2.00",
+                  "confirmed": true
+                },
+                "facts_confirmed": true,
+                "source": "manual"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Evaluation completed, including NEED_MORE_INFORMATION; Cache-Control: no-store",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AxleEvaluationResponse"
+                },
+                "example": {
+                  "schema_version": "1.0",
+                  "status": "evaluated",
+                  "evaluation": {
+                    "synthetic": true,
+                    "profile_id": "synthetic-box-001",
+                    "decision": "NEGOTIATE",
+                    "total_miles": "240",
+                    "loaded_rpm": "2.33",
+                    "all_mile_rpm": "1.75",
+                    "benchmark_source": "carrier_confirmed",
+                    "target_all_mile_rpm": "2.00",
+                    "target_revenue": "480.00",
+                    "revenue_gap_to_target": "60.00",
+                    "estimated_operating_cost": "290.00",
+                    "estimated_operating_surplus_after_allocated_costs": "130.00",
+                    "missing_information": [],
+                    "assumptions": [
+                      "Benchmark source: carrier_confirmed; revenue target is not a cost or profit target.",
+                      "Payout is the complete confirmed total; no additional FSC or bid is inferred.",
+                      "Mileage and schedule feasibility are supplied, not independently verified.",
+                      "Equipment trip cost must include applicable per-mile rental fees without double counting.",
+                      "ACCEPT means the supplied economic and schedule checks pass, not a booking or regulatory clearance."
+                    ]
+                  },
+                  "next_questions": [],
+                  "source": "manual",
+                  "confirmation_basis": "caller_assertion",
+                  "delivery": "canonical_api",
+                  "model_invoked": false,
+                  "native_connector": false
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Unauthorized; WWW-Authenticate: Bearer",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "detail": {
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "detail"
+                  ]
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Host forbidden or Origin header present",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "detail": {
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "detail"
+                  ]
+                }
+              }
+            }
+          },
+          "408": {
+            "description": "Body read timeout",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "detail": {
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "detail"
+                  ]
+                }
+              }
+            }
+          },
+          "413": {
+            "description": "Request exceeds 32768 bytes",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "detail": {
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "detail"
+                  ]
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Invalid request",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "detail": {
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "detail"
+                  ]
+                }
+              }
+            }
+          },
+          "429": {
+            "description": "Global rate or concurrency limit",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "detail": {
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "detail"
+                  ]
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "Internal error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "detail": {
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "detail"
+                  ]
+                }
+              }
+            }
+          }
+        }
+      }
+    }
+  },
+  "components": {
+    "securitySchemes": {
+      "bearerAuth": {
+        "type": "http",
+        "scheme": "bearer",
+        "description": "Private server-side credential; provision only through a verified secure review flow. No OAuth/scopes or self-service accounts implemented."
+      }
+    },
+    "schemas": {
+      "ConfirmedBenchmark": {
+        "additionalProperties": false,
+        "properties": {
+          "target_all_mile_rpm": {
+            "anyOf": [
+              {
+                "exclusiveMinimum": 0.0,
+                "maximum": 100.0,
+                "type": "number"
+              },
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Target All Mile Rpm"
+          },
+          "confirmed": {
+            "title": "Confirmed",
+            "type": "boolean",
+            "const": true
+          }
+        },
+        "required": [
+          "target_all_mile_rpm",
+          "confirmed"
+        ],
+        "title": "ConfirmedBenchmark",
+        "type": "object"
+      },
+      "Equipment": {
+        "enum": [
+          "box_truck_26ft",
+          "cargo_sprinter_van",
+          "tractor_carrier_owned_trailer",
+          "power_only_amazon_provided_trailer"
+        ],
+        "title": "Equipment",
+        "type": "string"
+      },
+      "Opportunity": {
+        "additionalProperties": false,
+        "properties": {
+          "equipment": {
+            "$ref": "#/components/schemas/Equipment"
+          },
+          "payout": {
+            "anyOf": [
+              {
+                "maximum": 1000000.0,
+                "minimum": 0.0,
+                "type": "number"
+              },
+              {
+                "type": "string"
+              }
+            ],
+            "description": "Complete confirmed payout; do not add bid or FSC again.",
+            "title": "Payout"
+          },
+          "loaded_miles": {
+            "anyOf": [
+              {
+                "exclusiveMinimum": 0.0,
+                "maximum": 100000.0,
+                "type": "number"
+              },
+              {
+                "type": "string"
+              }
+            ],
+            "title": "Loaded Miles"
+          },
+          "deadhead_miles": {
+            "anyOf": [
+              {
+                "maximum": 100000.0,
+                "minimum": 0.0,
+                "type": "number"
+              },
+              {
+                "type": "string"
+              }
+            ],
+            "description": "All additional miles committed to this opportunity, including known repositioning.",
+            "title": "Deadhead Miles"
+          },
+          "diesel_per_gallon": {
+            "anyOf": [
+              {
+                "exclusiveMinimum": 0.0,
+                "maximum": 100.0,
+                "type": "number"
+              },
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Diesel Per Gallon"
+          },
+          "mpg": {
+            "anyOf": [
+              {
+                "exclusiveMinimum": 0.0,
+                "maximum": 100.0,
+                "type": "number"
+              },
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Mpg"
+          },
+          "tolls": {
+            "anyOf": [
+              {
+                "maximum": 100000.0,
+                "minimum": 0.0,
+                "type": "number"
+              },
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Tolls"
+          },
+          "driver_cost": {
+            "anyOf": [
+              {
+                "maximum": 100000.0,
+                "minimum": 0.0,
+                "type": "number"
+              },
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Driver Cost"
+          },
+          "maintenance_per_mile": {
+            "anyOf": [
+              {
+                "maximum": 100.0,
+                "minimum": 0.0,
+                "type": "number"
+              },
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Maintenance Per Mile"
+          },
+          "equipment_trip_cost": {
+            "anyOf": [
+              {
+                "maximum": 100000.0,
+                "minimum": 0.0,
+                "type": "number"
+              },
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Equipment Trip Cost"
+          },
+          "insurance_trip_allocation": {
+            "anyOf": [
+              {
+                "maximum": 100000.0,
+                "minimum": 0.0,
+                "type": "number"
+              },
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Insurance Trip Allocation"
+          },
+          "operating_hours": {
+            "anyOf": [
+              {
+                "exclusiveMinimum": 0.0,
+                "maximum": 1000.0,
+                "type": "number"
+              },
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Operating Hours"
+          },
+          "schedule_feasible": {
+            "anyOf": [
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Schedule Feasible"
+          }
+        },
+        "required": [
+          "equipment",
+          "payout",
+          "loaded_miles",
+          "deadhead_miles"
+        ],
+        "title": "Opportunity",
+        "type": "object"
+      },
+      "AxleEvaluationRequest": {
+        "additionalProperties": false,
+        "properties": {
+          "opportunity": {
+            "$ref": "#/components/schemas/Opportunity"
+          },
+          "benchmark": {
+            "$ref": "#/components/schemas/ConfirmedBenchmark"
+          },
+          "facts_confirmed": {
+            "title": "Facts Confirmed",
+            "type": "boolean",
+            "const": true
+          },
+          "source": {
+            "enum": [
+              "manual",
+              "screenshot"
+            ],
+            "title": "Source",
+            "type": "string"
+          }
+        },
+        "required": [
+          "opportunity",
+          "benchmark",
+          "facts_confirmed",
+          "source"
+        ],
+        "title": "AxleEvaluationRequest",
+        "type": "object"
+      },
+      "Evaluation": {
+        "properties": {
+          "synthetic": {
+            "default": true,
+            "title": "Synthetic",
+            "type": "boolean",
+            "const": true
+          },
+          "profile_id": {
+            "title": "Profile Id",
+            "type": "string",
+            "const": "synthetic-box-001"
+          },
+          "decision": {
+            "title": "Decision",
+            "type": "string",
+            "enum": [
+              "ACCEPT",
+              "NEGOTIATE",
+              "NEED_MORE_INFORMATION",
+              "DECLINE"
+            ]
+          },
+          "total_miles": {
+            "title": "Total Miles",
+            "type": "string"
+          },
+          "loaded_rpm": {
+            "title": "Loaded Rpm",
+            "type": "string"
+          },
+          "all_mile_rpm": {
+            "title": "All Mile Rpm",
+            "type": "string"
+          },
+          "benchmark_source": {
+            "default": "synthetic_default",
+            "title": "Benchmark Source",
+            "type": "string"
+          },
+          "target_all_mile_rpm": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Target All Mile Rpm"
+          },
+          "target_revenue": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Target Revenue"
+          },
+          "revenue_gap_to_target": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Revenue Gap To Target"
+          },
+          "estimated_operating_cost": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Estimated Operating Cost"
+          },
+          "estimated_operating_surplus_after_allocated_costs": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Estimated Operating Surplus After Allocated Costs"
+          },
+          "missing_information": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Missing Information",
+            "type": "array"
+          },
+          "assumptions": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Assumptions",
+            "type": "array"
+          }
+        },
+        "required": [
+          "synthetic",
+          "profile_id",
+          "decision",
+          "total_miles",
+          "loaded_rpm",
+          "all_mile_rpm",
+          "benchmark_source",
+          "target_all_mile_rpm",
+          "target_revenue",
+          "revenue_gap_to_target",
+          "estimated_operating_cost",
+          "estimated_operating_surplus_after_allocated_costs",
+          "missing_information",
+          "assumptions"
+        ],
+        "title": "Evaluation",
+        "type": "object"
+      },
+      "NextQuestion": {
+        "properties": {
+          "field": {
+            "title": "Field",
+            "type": "string"
+          },
+          "question": {
+            "title": "Question",
+            "type": "string"
+          }
+        },
+        "required": [
+          "field",
+          "question"
+        ],
+        "title": "NextQuestion",
+        "type": "object"
+      },
+      "AxleEvaluationResponse": {
+        "properties": {
+          "schema_version": {
+            "const": "1.0",
+            "default": "1.0",
+            "title": "Schema Version",
+            "type": "string"
+          },
+          "status": {
+            "const": "evaluated",
+            "default": "evaluated",
+            "title": "Status",
+            "type": "string"
+          },
+          "evaluation": {
+            "$ref": "#/components/schemas/Evaluation"
+          },
+          "next_questions": {
+            "items": {
+              "$ref": "#/components/schemas/NextQuestion"
+            },
+            "title": "Next Questions",
+            "type": "array"
+          },
+          "source": {
+            "enum": [
+              "manual",
+              "screenshot"
+            ],
+            "title": "Source",
+            "type": "string"
+          },
+          "confirmation_basis": {
+            "const": "caller_assertion",
+            "default": "caller_assertion",
+            "title": "Confirmation Basis",
+            "type": "string"
+          },
+          "delivery": {
+            "const": "canonical_api",
+            "default": "canonical_api",
+            "title": "Delivery",
+            "type": "string"
+          },
+          "model_invoked": {
+            "const": false,
+            "default": false,
+            "title": "Model Invoked",
+            "type": "boolean"
+          },
+          "native_connector": {
+            "const": false,
+            "default": false,
+            "title": "Native Connector",
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "schema_version",
+          "status",
+          "evaluation",
+          "next_questions",
+          "source",
+          "confirmation_basis",
+          "delivery",
+          "model_invoked",
+          "native_connector"
+        ],
+        "title": "AxleEvaluationResponse",
+        "type": "object"
+      }
+    }
+  }
+}
