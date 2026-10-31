@@ -1,5 +1,7 @@
 # H13 lifecycle ownership review
 
+Follow-up: [host lifespan and HTTP configuration](H13_HOST_REVIEW.md).
+
 October 31, 2026. Baseline draft 65b6fc1. Assistant review and offline fault
 injection; not an independent audit or live runtime validation.
 
