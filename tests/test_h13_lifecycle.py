@@ -27,12 +27,17 @@ def test_timeout_retains_storage_owner_until_actual_exit(tmp_path,blocked):
     def send(*args):started.set();assert release.wait(2);return True
     life=owner(tmp_path,factory,send if blocked=='sender' else lambda *_:True)
     if blocked=='sender':life.delivery._timeout=.03
+    closed_clients=[]
+    class Client:
+        def close(self):closed_clients.append(1)
+    life._clients.append(Client())
     s=life.inbox;a=ready(s)
     s.submit(1,1,1,'evaluate',token=a.token,revision=1)
     try:
         assert life.worker.tick()=='uncertain' and started.is_set()
         status=life.close(timeout=.1)
         assert status['scheduler'] and not status[blocked] and not status['storage_released']
+        assert closed_clients==[]
         with pytest.raises(RuntimeError,match='already has an owner'):
             PilotInbox(tmp_path/'owned.sqlite3',{(1,1):'a'},s._policy)
         with pytest.raises(RuntimeError):life.start()
@@ -41,7 +46,7 @@ def test_timeout_retains_storage_owner_until_actual_exit(tmp_path,blocked):
         life.provider._executor.shutdown(wait=True)
         life.delivery._executor.shutdown(wait=True)
         status=life.close(timeout=1)
-    assert all(status.values())
+    assert all(status.values()) and closed_clients==[1]
     replacement=PilotInbox(tmp_path/'owned.sqlite3',{(1,1):'a'},s._policy)
     replacement.close()
 

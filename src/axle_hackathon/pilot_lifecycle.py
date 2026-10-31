@@ -13,11 +13,12 @@ from .pilot_telegram import create_app
 class PilotLifecycle:
     def __init__(self, path, bindings, policy, *, delegator_factory, send,
                  webhook_secret, allowed_host, global_limit, carrier_limit,
-                 provider_timeout, interval):
+                 provider_timeout, interval, transport_clients=()):
         self._lock = Lock()
         self._close_lock = Lock()
         self._closing = False
         self._started = False
+        self._clients = list(transport_clients)
         self._requests = 0
         self._requests_drained = Event();self._requests_drained.set()
         self.inbox = PilotInbox(path, bindings, policy)
@@ -33,7 +34,9 @@ class PilotLifecycle:
                 allowed_host=allowed_host,conversation=PilotConversation(self.inbox),send=send)
         except Exception:
             if self.provider is not None:self.provider.close()
-            self.inbox.close()
+            try:
+                for client in self._clients:client.close()
+            finally:self.inbox.close()
             raise
 
     def start(self):
@@ -71,7 +74,12 @@ class PilotLifecycle:
             status = dict(scheduler=scheduler,provider=self.provider.drained,
                           sender=self.delivery.drained,
                           requests=self._requests_drained.is_set())
-            if all(status.values()) and not self.inbox._closed:self.inbox.close()
+            if all(status.values()) and not self.inbox._closed:
+                while self._clients:
+                    try:self._clients[0].close()
+                    except Exception:raise RuntimeError('Transport cleanup incomplete') from None
+                    self._clients.pop(0)
+                self.inbox.close()
             status['storage_released'] = self.inbox._closed
             return status
         finally:

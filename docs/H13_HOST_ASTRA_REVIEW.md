@@ -1,5 +1,7 @@
 # H13 host cancellation review
 
+Follow-up: [injected HTTP adapters](H13_TRANSPORT_REVIEW.md).
+
 October 31, 2026. Baseline draft 7541a91. Assistant source review and offline
 fault injection; no independent audit or live runtime validation.
 
