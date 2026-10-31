@@ -1,5 +1,7 @@
 # H13 adapter and cleanup review
 
+Follow-up: [fixed composition and offline rehearsal](H13_FACTORY_REHEARSAL.md).
+
 October 31, 2026. Baseline draft 16b4634. Assistant source review and offline fault
 injection with invented acknowledgements; not an independent audit or live evidence.
 
