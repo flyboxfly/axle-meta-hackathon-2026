@@ -286,3 +286,38 @@ def test_disclosure_states_limits_and_requires_explicit_choice(setup):
     assert '60 seconds' in notice.text and '120 seconds' in notice.text
     with pytest.raises(ValueError):
         store.consent(1, 1, notice.token, 'unknown')
+
+
+def test_unicode_tokens_fail_as_permission_errors(setup):
+    store, _, _, _ = setup
+    access = consent(store)
+    with pytest.raises(PermissionError):
+        store.get(1, 1, 'é')
+    store.disclosure(1, 1)
+    with pytest.raises(PermissionError):
+        store.consent(1, 1, 'é', 'remember_profile')
+    confirmed(store, access)
+
+
+def test_closed_facade_cannot_reopen_consent(setup):
+    store, _, _, _ = setup
+    store.close()
+    with pytest.raises(RuntimeError, match='closed'):
+        consent(store)
+
+
+def test_failed_forget_cannot_be_bypassed_by_reconsent(setup):
+    store, path, _, _ = setup
+    save(store, consent(store))
+    with store._db:
+        store._db.execute('''CREATE TRIGGER fail_delete BEFORE DELETE ON pilot_profiles
+                             BEGIN SELECT RAISE(ABORT, 'test deletion failure'); END''')
+    with pytest.raises(sqlite3.IntegrityError):
+        store.forget(1, 1)
+    with pytest.raises(sqlite3.IntegrityError):
+        consent(store)  # must retry deletion before granting access
+    with store._db:
+        store._db.execute('DROP TRIGGER fail_delete')
+    access = consent(store)
+    assert store.load_profile(1, 1, access.token) is None
+    assert rows(path) == []

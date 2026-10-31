@@ -16,6 +16,11 @@ from pydantic import Field, ValidationError
 from .pilot import Frozen, Opportunity, PilotSessions, Profile, Snapshot
 
 
+def _token_matches(expected: str, supplied: str) -> bool:
+    return (isinstance(supplied, str) and supplied.isascii()
+            and len(supplied) == len(expected) and compare_digest(expected, supplied))
+
+
 class MemoryPolicy(Frozen):
     # This supplied notice must be reconciled with actual providers before release.
     version: str = Field(min_length=1, max_length=80)
@@ -71,6 +76,8 @@ class PilotMemory:
         self._policy = policy
         self._clock = clock or (lambda: datetime.now(timezone.utc))
         self._lock = RLock()
+        self._closed = False
+        self._pending_deletions: set[str] = set()
         self._sessions = PilotSessions(bindings)
         self._notices: dict[str, Disclosure] = {}
         self._active: dict[str, Access] = {}
@@ -86,6 +93,9 @@ class PilotMemory:
 
     def close(self):
         with self._lock:
+            if self._closed:
+                return
+            self._closed = True
             self._active.clear()
             self._notices.clear()
             self._sessions = PilotSessions(self._bindings)
@@ -101,6 +111,8 @@ class PilotMemory:
         # bool and floats must not alias numeric IDs in Python dict lookup.
         if type(user) is not int or type(chat) is not int or (user, chat) not in self._bindings:
             raise PermissionError('Unapproved private chat')
+        if self._closed:
+            raise RuntimeError('Pilot memory is closed')
         return self._bindings[(user, chat)]
 
     def _clear(self, carrier: str):
@@ -116,7 +128,7 @@ class PilotMemory:
         if access is not None and access.expires_at <= self._now():
             self._clear(carrier)
             access = None
-        if access is None or not isinstance(token, str) or not compare_digest(access.token, token):
+        if access is None or not _token_matches(access.token, token):
             raise PermissionError('Current consent required')
         return carrier, access
 
@@ -148,13 +160,11 @@ class PilotMemory:
             if choice not in ('session_only', 'remember_profile'):
                 raise ValueError('Explicit memory choice required')
             if (notice is None or notice.expires_at <= self._now()
-                    or not isinstance(notice_token, str)
-                    or not compare_digest(notice.token, notice_token)):
+                    or not _token_matches(notice.token, notice_token)):
                 raise PermissionError('Current disclosure acknowledgement required')
             self._clear(carrier)
-            if choice == 'session_only':
-                with self._db:
-                    self._db.execute('DELETE FROM pilot_profiles WHERE carrier=?', (carrier,))
+            if choice == 'session_only' or carrier in self._pending_deletions:
+                self._delete_profile(carrier)
             now = self._now()
             access = Access(token_urlsafe(24), choice, now,
                             now + timedelta(seconds=self._policy.session_seconds))
@@ -239,12 +249,20 @@ class PilotMemory:
         with self._lock:
             carrier = self._carrier(user, chat)
             self._clear(carrier)
-            with self._db:
-                self._db.execute('DELETE FROM pilot_profiles WHERE carrier=?', (carrier,))
+            self._delete_profile(carrier)
+
+    def _delete_profile(self, carrier: str):
+        # Remains latched if the transaction fails. Host recovery must handle restart.
+        self._pending_deletions.add(carrier)
+        with self._db:
+            self._db.execute('DELETE FROM pilot_profiles WHERE carrier=?', (carrier,))
+        self._pending_deletions.discard(carrier)
 
     def purge_expired(self):
         """Trusted host maintenance; no user/model parameters or returned private data."""
         with self._lock:
+            if self._closed:
+                raise RuntimeError('Pilot memory is closed')
             now = self._now()
             for carrier, access in tuple(self._active.items()):
                 if access.expires_at <= now:

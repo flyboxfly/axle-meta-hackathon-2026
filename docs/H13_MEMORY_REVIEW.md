@@ -1,5 +1,7 @@
 # H13 consent and profile memory — offline candidate
 
+Follow-up: [Astra review, fixes and remaining release blockers](H13_ASTRA_REVIEW.md).
+
 October 31, 2026. Based on draft PR #14 head a9b4c71. This adds no endpoint,
 live carrier processing, provider invocation, deployment or infrastructure change.
 The separate synthetic service and reviewer contract remain unchanged.
@@ -33,6 +35,8 @@ The adapter sequence is:
    active consent, clears snapshots/results/notices and deletes that carrier's profile row.
    If deletion fails, consent is still withdrawn and the error propagates; the adapter
    must say deletion failed, never report success. Other carriers remain unaffected.
+   A failed deletion now blocks renewed consent within the owning process until deletion
+   succeeds. This pending intent is not durable across restart; see the review recovery hold.
 
 Consent options and versions are application behavior, not a legal assessment. The
 host must supply a reviewed `MemoryPolicy.processing_notice` and version describing
@@ -90,8 +94,9 @@ The database is plain SQLite; filesystem and host isolation remain deployment wo
 
 Meta's observed free-credit product-improvement condition remains unresolved. Do not
 send private carrier data based on this local storage consent. Review the actual account
-conditions and processing disclosure first. Obtain an Astra architecture/isolation review
-before real carriers connect. Merge, deployment and runtime/secret changes remain separate
+conditions and processing disclosure first. The offline Astra review is complete; review
+the integrated transport/storage boundaries again before real carriers connect.
+Merge, deployment and runtime/secret changes remain separate
 owner decisions. Shared Coolify proxy and protected infrastructure holds still apply.
 
 ## Verification
