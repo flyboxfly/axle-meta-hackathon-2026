@@ -1,3 +1,5 @@
+> **Next phase — proposed Telegram carrier pilot:** See [H13 specification](docs/H13_TELEGRAM_PILOT.md) and [runtime role definitions](docs/agents/README.md). These documents define the next build; Telegram, persistent carrier profiles and real-data specialist coordination are not implemented by this change. Existing synthetic behavior remains unchanged.
+
 # Axle × Meta — local freight prototype
 
 ## H11 remote browser integration — review candidate
