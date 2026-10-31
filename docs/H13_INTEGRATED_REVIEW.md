@@ -1,5 +1,9 @@
 # H13 integrated Astra review
 
+Follow-up: [privacy-capacity fix](H13_PRIVACY_CAPACITY_REVIEW.md) addresses the
+reproduced full ordinary-inbox admission failure. General ordering, blocking sends
+and recovery UX below remain open; no live-runtime clearance is implied.
+
 October 31, 2026. Baseline: draft PR #14 at 7c1993e. Assistant source review and
 offline fault injection; not an independent audit or live service validation.
 

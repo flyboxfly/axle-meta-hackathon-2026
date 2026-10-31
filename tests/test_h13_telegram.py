@@ -16,7 +16,7 @@ def client(s):
 
 
 def update(command='/evaluate', uid=1, id=100, kind='private'):
-    return dict(update_id=id,message={'from':dict(id=uid,is_bot=False),
+    return dict(update_id=id,message={'message_id':id,'from':dict(id=uid,is_bot=False),
         'chat':dict(id=uid,type=kind),'text':command})
 
 

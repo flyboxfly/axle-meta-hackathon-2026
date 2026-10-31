@@ -76,7 +76,10 @@ def create_app(inbox, *, webhook_secret: str, allowed_host: str, conversation=No
                 return reply(400, 'unsupported_command')
             with inbox._lock:
                 carrier = inbox._carrier(user, chat)
-                if inbox.duplicate_update(user, chat, data['update_id'], action):
+                command_id = message.get('message_id') if action == 'forget' else None
+                if action == 'forget' and (type(command_id) is not int or command_id <= 0):
+                    return reply(400,'invalid_update')
+                if inbox.duplicate_update(user, chat, data['update_id'], action,command_id=command_id):
                     return reply(200, 'duplicate')
                 if action == 'evaluate':
                     access = inbox._active.get(carrier)
@@ -86,7 +89,7 @@ def create_app(inbox, *, webhook_secret: str, allowed_host: str, conversation=No
                     accepted = inbox.submit(user, chat, data['update_id'], action,
                                             token=access.token, revision=snapshot.revision)
                 else:
-                    accepted = inbox.submit(user, chat, data['update_id'], action)
+                    accepted = inbox.submit(user, chat, data['update_id'], action,command_id=command_id)
                     if conversation is not None:
                         conversation.clear(user,chat)
             return reply(200, 'queued' if accepted else 'duplicate')
