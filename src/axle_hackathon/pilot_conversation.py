@@ -38,6 +38,14 @@ class PilotConversation:
             flow = self._flows.get(carrier)
             if flow is None:
                 raise ValueError('Start a fresh intake with /start')
+            if text=='/refresh':
+                if flow['step']=='memory':
+                    if flow['notice'].expires_at <= self.inbox._now():
+                        self.clear(user,chat)
+                        raise ValueError('Disclosure expired')
+                else:
+                    self.inbox._access(user,chat,flow['token'])
+                return self._prompt(carrier,flow['last_prompt'])
             parts = text.split(' ', 2)
             if len(parts) < 2 or parts[1] != flow['nonce']:
                 raise ValueError('Stale conversation step')
@@ -177,4 +185,5 @@ class PilotConversation:
         return self._prompt(carrier,prompt)
 
     def _prompt(self,carrier,prompt):
+        self._flows[carrier]['last_prompt']=prompt
         return prompt + '\nStep: ' + self._flows[carrier]['nonce'] + '\nReply format: /reply STEP answer'

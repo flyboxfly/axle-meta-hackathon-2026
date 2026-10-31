@@ -73,7 +73,7 @@ class PilotInbox(PilotMemory):
                 update_id INTEGER PRIMARY KEY, carrier TEXT NOT NULL, action TEXT NOT NULL,
                 revision INTEGER, generation TEXT, status TEXT NOT NULL, claim TEXT)''')
             # An interrupted paid request has an unknown outcome. Never replay it.
-            self._db.execute("UPDATE pilot_updates SET status='uncertain' WHERE status='processing'")
+            self._db.execute("UPDATE pilot_updates SET status='uncertain' WHERE status IN ('processing','sending')")
             self._db.execute('''CREATE TABLE IF NOT EXISTS pilot_privacy (
                 carrier TEXT NOT NULL,user_id INTEGER NOT NULL,chat_id INTEGER NOT NULL,
                 command_id INTEGER NOT NULL,update_id INTEGER NOT NULL,status TEXT NOT NULL,
@@ -154,13 +154,21 @@ class PilotInbox(PilotMemory):
                                  (claim, update_id))
             return claim, row[2]
 
+    def start_delivery(self,user,chat,update_id,claim):
+        with self._lock:
+            carrier=self._carrier(user,chat)
+            with self._db:
+                count=self._db.execute("UPDATE pilot_updates SET status='sending' WHERE update_id=? "
+                    "AND carrier=? AND claim=? AND status='processing'",(update_id,carrier,claim)).rowcount
+                if count != 1:raise ValueError('Stale delivery attempt')
+
     def finish(self, user, chat, update_id, claim, *, success: bool):
         """Record outcome only. No delivery or authorization follows from this status."""
         with self._lock:
             carrier = self._carrier(user, chat)
             with self._db:
                 count = self._db.execute("UPDATE pilot_updates SET status=? WHERE update_id=? AND carrier=? "
-                    "AND status='processing' AND claim=?",
+                    "AND status IN ('processing','sending') AND claim=?",
                     ('completed' if success else 'uncertain', update_id, carrier, claim)).rowcount
                 if count != 1:
                     raise ValueError('Stale task completion')

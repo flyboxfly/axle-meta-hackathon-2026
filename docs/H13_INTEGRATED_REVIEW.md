@@ -6,6 +6,9 @@ and recovery UX below remain open; no live-runtime clearance is implied.
 Later follow-up: [conservative chat ordering](H13_ORDERING_REVIEW.md) implements a
 persisted message-ID fence for the one-chat-per-carrier webhook candidate. Read its
 enrollment/reset limits; blocking delivery and recovery UX remain unresolved.
+Latest follow-up: [bounded delivery and refresh](H13_DELIVERY_REVIEW.md) removes
+external sends from the state lock and adds safe prompt recovery. Read its in-flight
+withdrawal and uncancellable-thread limits; integrated re-review is still required.
 
 October 31, 2026. Baseline: draft PR #14 at 7c1993e. Assistant source review and
 offline fault injection; not an independent audit or live service validation.

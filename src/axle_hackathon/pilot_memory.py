@@ -79,6 +79,7 @@ class PilotMemory:
         self._clock = clock or (lambda: datetime.now(timezone.utc))
         self._lock = RLock()
         self._closed = False
+        self._delivery_pool = None
         self._pending_deletions: set[str] = set()
         self._sessions = PilotSessions(bindings)
         self._notices: dict[str, Disclosure] = {}
@@ -119,6 +120,8 @@ class PilotMemory:
             if self._closed:
                 return
             self._closed = True
+            if self._delivery_pool is not None:
+                self._delivery_pool.close()
             self._active.clear()
             self._conversation_states.clear()
             self._notices.clear()
