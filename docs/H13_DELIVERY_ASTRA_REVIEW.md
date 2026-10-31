@@ -1,5 +1,7 @@
 # H13 delivery and withdrawal review
 
+Follow-up: [offline worker and attempt caps](H13_RUNTIME_REVIEW.md).
+
 October 31, 2026. Baseline: draft PR #14 at a8685dc. Assistant source review and
 offline fault injection with invented data and fake senders; not an independent
 audit or live Telegram evidence.
