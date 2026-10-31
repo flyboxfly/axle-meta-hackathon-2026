@@ -10,6 +10,17 @@ from .pilot_memory import PilotMemory
 
 
 class PilotInbox(PilotMemory):
+    def duplicate_update(self, user, chat, update_id, action) -> bool:
+        with self._lock:
+            carrier = self._carrier(user, chat)
+            if type(update_id) is not int or not 0 <= update_id < 2**63:
+                raise ValueError('Invalid update ID')
+            row = self._db.execute('SELECT carrier,action FROM pilot_updates WHERE update_id=?',
+                                   (update_id,)).fetchone()
+            if row and row != (carrier, action):
+                raise PermissionError('Update scope mismatch')
+            return row is not None
+
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
         with self._db:

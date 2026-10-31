@@ -4,6 +4,8 @@
 
 H13 follow-up: [synthetic Meta adapter and offline evidence](docs/H13_META_REVIEW.md).
 The injected-client adapter is tested with mocks; live Meta/Telegram integration remains pending.
+See the [Telegram boundary and worker candidate](docs/H13_TELEGRAM_BOUNDARY_REVIEW.md)
+for the authenticated offline command/queue/model/fake-delivery test and remaining live work.
 
 ## H11 remote browser integration — review candidate
 
