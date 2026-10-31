@@ -1,5 +1,8 @@
 # H13 bounded delivery and conversation recovery candidate
 
+Follow-up: [delivery and withdrawal review](H13_DELIVERY_ASTRA_REVIEW.md) records
+two reproduced lifecycle fixes, 310 passing tests and the remaining runtime gates.
+
 October 31, 2026. Based on draft c308ab6. Offline fake senders only; no Telegram
 client, bot credentials, paid requests, deployment or infrastructure changes.
 

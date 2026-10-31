@@ -8,7 +8,9 @@ persisted message-ID fence for the one-chat-per-carrier webhook candidate. Read 
 enrollment/reset limits; blocking delivery and recovery UX remain unresolved.
 Latest follow-up: [bounded delivery and refresh](H13_DELIVERY_REVIEW.md) removes
 external sends from the state lock and adds safe prompt recovery. Read its in-flight
-withdrawal and uncancellable-thread limits; integrated re-review is still required.
+withdrawal and uncancellable-thread limits. The subsequent
+[delivery re-review](H13_DELIVERY_ASTRA_REVIEW.md) fixes shutdown replacement and
+cancellation gaps; live runtime controls and data-use clearance remain required.
 
 October 31, 2026. Baseline: draft PR #14 at 7c1993e. Assistant source review and
 offline fault injection; not an independent audit or live service validation.

@@ -29,11 +29,14 @@ def test_duplicate_and_single_claim(inbox):
     with pytest.raises(ValueError): s.finish(1,1,10,claim,success=True)
 
 
-def test_restart_marks_inflight_uncertain_and_does_not_replay(inbox):
+@pytest.mark.parametrize('sending', [False, True])
+def test_restart_marks_inflight_uncertain_and_does_not_replay(inbox, sending):
     s, path, policy = inbox
     a=consent(s); save(s,a)
     s.submit(1,1,10,'evaluate',token=a.token,revision=1)
-    s.claim_evaluation(1,1,10,a.token)
+    claim,_=s.claim_evaluation(1,1,10,a.token)
+    if sending:
+        s.start_delivery(1,1,10,claim)
     s.close()
     new=PilotInbox(path,{(1,1):'a'},policy)
     try:

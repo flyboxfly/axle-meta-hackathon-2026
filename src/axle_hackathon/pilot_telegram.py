@@ -27,8 +27,8 @@ def create_app(inbox, *, webhook_secret: str, allowed_host: str, conversation=No
         try: yield
         finally:
             delivery.close()
-            with inbox._lock:
-                if inbox._delivery_pool is delivery:inbox._delivery_pool=None
+            # Keep the terminal pool attached: timed-out sends may still own slots.
+            # Reusing this inbox must never create replacement delivery capacity.
     app = FastAPI(docs_url=None, redoc_url=None, openapi_url=None,lifespan=lifespan)
 
     @app.post('/telegram/webhook')
@@ -100,9 +100,11 @@ def create_app(inbox, *, webhook_secret: str, allowed_host: str, conversation=No
                     if len(answer)>4000:raise ValueError('Reply too large')
                     await asyncio.to_thread(delivery.send,chat,answer,guard,send)
                     inbox.finish(user,chat,data['update_id'],claim,success=True)
-                except Exception:
+                except (Exception, asyncio.CancelledError) as exc:
                     try:inbox.finish(user,chat,data['update_id'],claim,success=False)
                     except Exception:pass
+                    if isinstance(exc, asyncio.CancelledError):
+                        raise
                     return reply(503,'unavailable')
                 return reply(200,'processed')
             # Accept only explicit commands; no media fetch or unreviewed text intake.
