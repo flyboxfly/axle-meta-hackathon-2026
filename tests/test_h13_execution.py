@@ -97,3 +97,37 @@ def test_stalled_flow_admission_keeps_forget_available(inbox,monkeypatch):
             assert (await post('/start',5)).status_code==503
             assert s._db.execute('SELECT count(*) FROM pilot_updates').fetchone()==(3,)
     asyncio.run(exercise())
+
+
+def test_scheduler_close_does_not_wait_for_inbox_lock(inbox):
+    from concurrent.futures import ThreadPoolExecutor
+    s,_,_=inbox
+    class D:
+        def evaluate(self,*args):raise AssertionError('No model work expected')
+    w=PilotWorker(s,D(),lambda *_:True,global_limit=1,carrier_limit=1)
+    scheduler=PilotScheduler(w,interval=1)
+    # A database operation may hold this lock. Shutdown's deadline must still apply.
+    with ThreadPoolExecutor(max_workers=1) as pool:
+        with s._lock:
+            closing=pool.submit(scheduler.close,timeout=.05)
+            assert closing.result(timeout=.3)
+    assert w.tick()=='closed'
+
+
+def test_scheduler_reports_incomplete_drain_for_tick_waiting_on_storage(inbox):
+    from concurrent.futures import ThreadPoolExecutor
+    s,_,_=inbox;entered=Event()
+    class W(PilotWorker):
+        def tick(self):entered.set();return super().tick()
+    w=W(s,None,None,global_limit=1,carrier_limit=1)
+    scheduler=PilotScheduler(w,interval=1)
+    try:
+        with ThreadPoolExecutor(max_workers=1) as pool:
+            with s._lock:
+                scheduler.start()
+                assert entered.wait(1)
+                closing=pool.submit(scheduler.close,timeout=.05)
+                assert closing.result(timeout=.3) is False
+    finally:
+        assert scheduler.close(timeout=1)
+    assert scheduler.last_status=='closed'

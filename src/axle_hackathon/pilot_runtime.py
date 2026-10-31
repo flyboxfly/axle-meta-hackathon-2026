@@ -1,5 +1,5 @@
 """Offline single-tick worker and durable attempt caps; no launcher or transports."""
-from threading import Lock
+from threading import Event, Lock
 
 from .pilot_telegram import run_evaluation
 
@@ -10,7 +10,7 @@ class PilotWorker:
             raise ValueError('Explicit positive attempt caps required')
         self.inbox, self.delegator, self.send = inbox, delegator, send
         self.global_limit, self.carrier_limit = global_limit, carrier_limit
-        self._closed = False
+        self._closed = Event()
         with inbox._lock, inbox._db:
             if inbox._closed:raise RuntimeError('Inbox closed')
             if not hasattr(inbox, '_worker_busy'):inbox._worker_busy = Lock()
@@ -20,7 +20,7 @@ class PilotWorker:
 
     def close(self):
         # Does not cancel an already claimed attempt or its external I/O.
-        with self.inbox._lock:self._closed = True
+        self._closed.set()
 
     def _evaluate(self, user, chat, token, revision):
         s = self.inbox
@@ -49,7 +49,7 @@ class PilotWorker:
         try:
             s = self.inbox
             with s._lock:
-                if self._closed or s._closed:return 'closed'
+                if self._closed.is_set() or s._closed:return 'closed'
                 s.purge_expired()
                 # Privacy is serviced before evaluation, including when budgets are spent.
                 rows = s._db.execute("SELECT user_id,chat_id,update_id FROM pilot_privacy WHERE status!='completed'").fetchall()
@@ -64,8 +64,8 @@ class PilotWorker:
                 if access is None:
                     with s._db:s._db.execute("UPDATE pilot_updates SET status='uncertain' WHERE update_id=?",(update,))
                     return 'uncertain'
-                # Atomically claim before releasing admission lock. run_evaluation claims itself;
-                # another worker cannot repeat that claim even if independently constructed.
+                # run_evaluation claims under the inbox lock before provider work.
+                # Shared worker admission prevents another tick from taking this item.
             try:
                 run_evaluation(s,self,self.send,user=user,chat=chat,update_id=update)
                 return 'completed'

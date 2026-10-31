@@ -1,5 +1,7 @@
 # H13 bounded execution and scheduler candidate
 
+Follow-up: [integrated execution review](H13_EXECUTION_ASTRA_REVIEW.md).
+
 October 31, 2026. Baseline draft f83b793. Offline fake providers/senders only.
 
 BoundedDelegator wraps an injected delegator with one in-flight operation and an
