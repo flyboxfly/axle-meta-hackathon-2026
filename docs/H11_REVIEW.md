@@ -41,7 +41,7 @@ Branch: `feature/h11-remote-integration`.
 ## Mac terminal — private live validation
 
 After checking out this reviewed branch in the existing Mac worktree, activate
-the existing virtual environment (inspect its name first; historically `.venv-h1`).
+the existing virtual environment (owner verified `.venv` for this checkout).
 Do not install Docker. From the repository root:
 
 ```sh
@@ -96,11 +96,45 @@ redirect/JSON/size/provenance failures, secret redaction, local-mode compatibili
 and static contract drift. No paid inference or external authenticated request
 is used by tests. Browser script syntax is not rendered/interactive UI QA.
 
-Live Mac screenshot-to-remote validation, installed-SDK-to-provider compatibility,
-authenticated public H11 evaluation, repeated reliability and visual/interactive
-browser validation remain pending. Owner-held credentials are unavailable to
-this workspace; the private launcher is provided for the owner terminal. No
-credential values have been requested in chat.
+### Owner-operated Mac live evidence — October 30, 2026 (America/New_York)
+
+Tested checkout: `9733fd38ba0e6ba5066bd8e1b47c43810a71cc33`.
+Owner terminal reported **183 passed in 4.08s**, static OpenAPI `--check`
+succeeded in the chained command, and `pip check` reported no broken requirements.
+The existing Mac environment is `.venv`.
+
+Owner supplied browser screenshots after synthetic screenshot extraction and
+carrier confirmation. All three live Meta-selected evaluations returned validated
+public API envelopes. Each trace shows model `muse-spark-1.3`, tool
+`evaluate_freight_opportunity`, `executed_and_validated`, `remote_https`,
+`deployed_axle_api`, canonical UI delivery and `model_received_result: false`.
+
+| Confirmed target | Decision | Target revenue | Revenue gap |
+| --- | --- | --- | --- |
+| 2.00 | NEGOTIATE | 480.00 | 60.00 |
+| 1.75 | ACCEPT | 420.00 | 0.00 |
+| Explicitly unknown | NEED_MORE_INFORMATION | null | null |
+
+All cases retain 240 total miles, loaded RPM 2.33, all-mile RPM 1.75,
+estimated costs 290.00 and operating surplus 130.00. Unknown-target evidence
+shows `benchmark_source: carrier_unknown`, null target, missing
+`carrier_revenue_target` and the corresponding next question. Returned envelopes
+identify `source: screenshot`, synthetic profile `synthetic-box-001`,
+`model_invoked: false` and `native_connector: false`. The model flag describes
+the deterministic API evaluator; actual Meta tool selection is shown separately.
+
+An initial live attempt failed with bounded category `authorization`; the UI
+preserved inputs and displayed no decision. After the owner privately re-entered
+the existing deployed API credential and restarted only the local launcher,
+the three cases above succeeded. No credential value was shared in chat or
+changed on the deployed service. This is authentication-failure recovery evidence,
+not proof of which credential value was entered initially.
+
+Evidence was reviewed from owner-operated browser screenshots, not direct access
+to the Mac or independent network capture. It establishes the three demonstrated
+live cases and interactive result rendering, not repeated reliability, exhaustive
+visual/accessibility QA, independent extraction-accuracy measurement or native
+Muse integration. Credentials remain owner-held and unavailable to this workspace.
 
 ## Native connector preparation
 
