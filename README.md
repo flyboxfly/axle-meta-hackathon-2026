@@ -2,6 +2,9 @@
 
 # Axle × Meta — local freight prototype
 
+H13 follow-up: [synthetic Meta adapter and offline evidence](docs/H13_META_REVIEW.md).
+The injected-client adapter is tested with mocks; live Meta/Telegram integration remains pending.
+
 ## H11 remote browser integration — review candidate
 
 An explicit remote mode lets the protected local browser's Meta-selected tool
