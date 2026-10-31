@@ -6,6 +6,11 @@ __pycache__/
 .pytest_cache/
 *.egg-info/
 evidence/
+pilot-data/
+*.sqlite
+*.sqlite3
+*.sqlite-journal
+*.sqlite3-journal
 
 # Local Mac environments and diagnostic backups
 .venv-*/

@@ -41,8 +41,10 @@ runtime multi-agent orchestration.
 ## Deliberate limits before real use
 The trusted adapter must authenticate numeric Telegram IDs and private-chat status;
 this module does not authenticate users. Its binding map is not a model tool argument.
-There is no endpoint or credential processing here. Session expiry, revocation,
-consent workflow, persistence, field-level confirmation timestamps, freshness policy,
+There is no endpoint or credential processing here. The separate [memory facade](H13_MEMORY_REVIEW.md)
+now adds offline consent gating, session access expiry, withdrawal and explicit profile
+persistence. The pure PilotSessions helper itself has none of those policies; future
+transport must use the facade. Field-level confirmation timestamps, freshness policy,
 detailed schedule evaluation, model adapters and webhook dedup remain unbuilt.
 No claim of complete hosted tenant isolation follows from these unit tests.
 
@@ -60,7 +62,7 @@ recorded, not verified capacity/compliance. Schedule is an explicit supplied
 assertion, not a routing or HOS check. Supplied CPM inclusions are carrier assertions.
 
 The offline pilot software field now requires structured records instead of strings;
-no persisted profiles or deployed consumers existed to migrate. Synthetic contracts
+no persisted profiles or deployed consumers existed at that slice to migrate. Synthetic contracts
 and dependencies are unchanged. Direct calculate(Snapshot(..., confirmed=True)) remains
 a trusted offline helper; a timestamp or metadata alone never authenticates a carrier.
 
@@ -94,5 +96,5 @@ invalid numbers, rounding, separate rental base/mileage/covered maintenance,
 CPM inclusion overlap, metadata/software validation, and confirmation invalidation.
 All fixtures are invented; no live bot, provider call, carrier data or hosting was tested.
 
-Next: consent/profile storage, then Meta/Telegram execution. No real-carrier data before those boundaries
+Next: Meta/Telegram execution and release-boundary review. No real-carrier data before those boundaries
 are implemented and verified. Merge and deployment remain separate owner decisions.

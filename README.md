@@ -1,4 +1,4 @@
-> **H13 — offline carrier planning core; Telegram pilot proposed:** See [H13 specification](docs/H13_TELEGRAM_PILOT.md), [implemented scope and evidence](docs/H13_CORE_REVIEW.md) and [runtime role definitions](docs/agents/README.md). The separate pure Python core supports confirmed revision snapshots, cost normalization and profile metadata. Telegram, persistent carrier profiles and real-data specialist coordination remain unbuilt. Existing synthetic behavior remains unchanged.
+> **H13 — offline carrier pilot modules; Telegram proposed:** See [H13 specification](docs/H13_TELEGRAM_PILOT.md), [planning core](docs/H13_CORE_REVIEW.md), [consent and profile memory](docs/H13_MEMORY_REVIEW.md) and [runtime role definitions](docs/agents/README.md). Separate Python modules support confirmed revision snapshots, cost normalization, profile metadata and consent-gated SQLite profile saves. Telegram, live processing disclosures and real-data specialist coordination remain unbuilt. Existing synthetic behavior remains unchanged.
 
 # Axle × Meta — local freight prototype
 

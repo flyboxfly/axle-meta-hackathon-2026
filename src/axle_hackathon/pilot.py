@@ -250,6 +250,13 @@ class PilotSessions:
         with self._lock:
             return self._sessions[self._carrier(user, chat)]
 
+    def clear(self, user: int, chat: int):
+        """Trusted facade expiry/withdrawal; its consent token prevents revision reuse."""
+        with self._lock:
+            carrier = self._carrier(user, chat)
+            self._sessions.pop(carrier, None)
+            self._results.pop(carrier, None)
+
     def confirm(self, user: int, chat: int, revision: int) -> Snapshot:
         with self._lock:
             carrier = self._carrier(user, chat)

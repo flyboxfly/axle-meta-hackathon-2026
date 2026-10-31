@@ -2,8 +2,9 @@
 
 Status: target specification with a separate offline core implemented. Prepared October 31, 2026.
 Latest inspection: main 8358f191f0251995687ba7dda21ede4a88c9af15; open draft PR #14
-head acb03c60f65dab02b2c4a99f57812eb7de453b29 before this cost-normalization slice.
-Read [implemented scope and evidence](H13_CORE_REVIEW.md) for actual behavior.
+head a9b4c7168832bb99626046170df49747fe3414db before the consent/storage slice.
+Read [planning core](H13_CORE_REVIEW.md) and [memory candidate](H13_MEMORY_REVIEW.md)
+for actual behavior.
 No live agent runtime, deployment, new credentials, paid model call or real-data processing is added here.
 
 ## Goal
