@@ -8,6 +8,8 @@ from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from secrets import compare_digest, token_urlsafe
 import sqlite3
+import os
+import fcntl
 from threading import RLock
 from typing import Callable, Literal
 
@@ -81,15 +83,35 @@ class PilotMemory:
         self._sessions = PilotSessions(bindings)
         self._notices: dict[str, Disclosure] = {}
         self._active: dict[str, Access] = {}
-        self._db = sqlite3.connect(str(path), check_same_thread=False)
-        self._db.execute('PRAGMA journal_mode=DELETE')
-        self._db.execute('PRAGMA secure_delete=ON')
-        self._db.execute('''CREATE TABLE IF NOT EXISTS pilot_profiles (
-            carrier TEXT PRIMARY KEY, version TEXT NOT NULL, profile TEXT NOT NULL,
-            saved_at TEXT NOT NULL, expires_at REAL NOT NULL,
-            disclosure_version TEXT NOT NULL, source_revision INTEGER NOT NULL,
-            source_confirmed_at TEXT NOT NULL, consented_at TEXT NOT NULL)''')
-        self._db.commit()
+        self._owner_file = None
+        if str(path) != ':memory:':
+            # Keep a separate lock inode; never unlink it while another owner may start.
+            fd = os.open(str(Path(path).resolve()) + '.owner',
+                         os.O_RDWR | os.O_CREAT | os.O_NOFOLLOW, 0o600)
+            self._owner_file = os.fdopen(fd, 'a+b')
+            try:
+                fcntl.flock(fd, fcntl.LOCK_EX | fcntl.LOCK_NB)
+            except OSError:
+                self._owner_file.close()
+                raise RuntimeError('Pilot database already has an owner') from None
+        try:
+            self._db = sqlite3.connect(str(path), check_same_thread=False)
+            self._db.execute('PRAGMA journal_mode=DELETE')
+            self._db.execute('PRAGMA secure_delete=ON')
+            self._db.execute('''CREATE TABLE IF NOT EXISTS pilot_profiles (
+                carrier TEXT PRIMARY KEY, version TEXT NOT NULL, profile TEXT NOT NULL,
+                saved_at TEXT NOT NULL, expires_at REAL NOT NULL,
+                disclosure_version TEXT NOT NULL, source_revision INTEGER NOT NULL,
+                source_confirmed_at TEXT NOT NULL, consented_at TEXT NOT NULL)''')
+            self._db.commit()
+            self._db.execute('CREATE TABLE IF NOT EXISTS pilot_deletions (carrier TEXT PRIMARY KEY)')
+            self._db.commit()
+        except Exception:
+            if hasattr(self, "_db"):
+                self._db.close()
+            if self._owner_file is not None:
+                self._owner_file.close()
+            raise
 
     def close(self):
         with self._lock:
@@ -100,6 +122,8 @@ class PilotMemory:
             self._notices.clear()
             self._sessions = PilotSessions(self._bindings)
             self._db.close()
+            if self._owner_file is not None:
+                self._owner_file.close()
 
     def _now(self) -> datetime:
         now = self._clock()
@@ -163,7 +187,9 @@ class PilotMemory:
                     or not _token_matches(notice.token, notice_token)):
                 raise PermissionError('Current disclosure acknowledgement required')
             self._clear(carrier)
-            if choice == 'session_only' or carrier in self._pending_deletions:
+            pending = self._db.execute('SELECT 1 FROM pilot_deletions WHERE carrier=?',
+                                       (carrier,)).fetchone()
+            if choice == 'session_only' or carrier in self._pending_deletions or pending:
                 self._delete_profile(carrier)
             now = self._now()
             access = Access(token_urlsafe(24), choice, now,
@@ -252,10 +278,13 @@ class PilotMemory:
             self._delete_profile(carrier)
 
     def _delete_profile(self, carrier: str):
-        # Remains latched if the transaction fails. Host recovery must handle restart.
+        # Commit intent separately: failed DELETE/rollback must not lose withdrawal.
         self._pending_deletions.add(carrier)
         with self._db:
+            self._db.execute('INSERT OR IGNORE INTO pilot_deletions VALUES (?)', (carrier,))
+        with self._db:
             self._db.execute('DELETE FROM pilot_profiles WHERE carrier=?', (carrier,))
+            self._db.execute('DELETE FROM pilot_deletions WHERE carrier=?', (carrier,))
         self._pending_deletions.discard(carrier)
 
     def purge_expired(self):

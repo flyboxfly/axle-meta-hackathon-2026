@@ -1,6 +1,9 @@
 # H13 consent and profile memory — offline candidate
 
 Follow-up: [Astra review, fixes and remaining release blockers](H13_ASTRA_REVIEW.md).
+Later follow-up: [durable deletion intent and single-owner enforcement](H13_INBOX_REVIEW.md).
+The historical process-local recovery and unenforced ownership limits below are
+superseded by that candidate for supported local POSIX file paths.
 
 October 31, 2026. Based on draft PR #14 head a9b4c71. This adds no endpoint,
 live carrier processing, provider invocation, deployment or infrastructure change.

@@ -11,6 +11,8 @@ pilot-data/
 *.sqlite3
 *.sqlite-journal
 *.sqlite3-journal
+*.sqlite.owner
+*.sqlite3.owner
 
 # Local Mac environments and diagnostic backups
 .venv-*/

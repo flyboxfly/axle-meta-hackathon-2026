@@ -1,5 +1,9 @@
 # H13 Astra boundary review
 
+Follow-up: [durable inbox/privacy recovery candidate](H13_INBOX_REVIEW.md) implements
+restart-safe deletion intent and POSIX single-owner enforcement. Historical findings
+below describe the reviewed baseline; integrated transport review remains pending.
+
 October 31, 2026. Reviewed draft PR #14 at 14761ab40fd606ca3d9a4477f4fbe15f1dd1944e
 using source inspection and offline fault injection. This is an assistant code review,
 not an independent security audit or approval to process real carrier data.
