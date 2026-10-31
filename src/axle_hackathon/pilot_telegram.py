@@ -10,7 +10,7 @@ from .pilot_memory import _token_matches
 from .remote_app import _is_valid_hostname
 
 
-def create_app(inbox, *, webhook_secret: str, allowed_host: str):
+def create_app(inbox, *, webhook_secret: str, allowed_host: str, conversation=None, send=None):
     if not re.fullmatch(r'[A-Za-z0-9_-]{32,256}', webhook_secret):
         raise ValueError('Explicit webhook secret required')
     if not _is_valid_hostname(allowed_host):
@@ -48,6 +48,28 @@ def create_app(inbox, *, webhook_secret: str, allowed_host: str):
             user, chat = message['from']['id'], message['chat']['id']
             if message['chat']['type'] != 'private' or message['from'].get('is_bot') is not False:
                 return reply(403, 'rejected')
+            text = message.get('text')
+            if (conversation is not None and isinstance(text,str)
+                    and text.split(' ',1)[0] in ('/start','/reply','/confirm','/edit','/save')):
+                if send is None or conversation.inbox is not inbox:
+                    return reply(503,'unavailable')
+                with inbox._lock:
+                    claim = inbox.begin_flow(user,chat,data['update_id'])
+                    if claim is None:
+                        return reply(200,'duplicate')
+                    try:
+                        answer = conversation.handle(user,chat,text)
+                        if len(answer) > 4000 or send(chat,answer) is not True:
+                            raise RuntimeError('Delivery not confirmed')
+                        inbox.finish(user,chat,data['update_id'],claim,success=True)
+                    except (ValueError,KeyError,TypeError,PermissionError):
+                        inbox.finish(user,chat,data['update_id'],claim,success=False)
+                        # No private input/validation details in response; step remains reviewable.
+                        return reply(400,'invalid_conversation_step')
+                    except Exception:
+                        inbox.finish(user,chat,data['update_id'],claim,success=False)
+                        return reply(503,'unavailable')
+                return reply(200,'processed')
             # Accept only explicit commands; no media fetch or unreviewed text intake.
             action = {'/evaluate': 'evaluate', '/forget': 'forget'}.get(message.get('text'))
             if action is None:
@@ -65,6 +87,8 @@ def create_app(inbox, *, webhook_secret: str, allowed_host: str):
                                             token=access.token, revision=snapshot.revision)
                 else:
                     accepted = inbox.submit(user, chat, data['update_id'], action)
+                    if conversation is not None:
+                        conversation.clear(user,chat)
             return reply(200, 'queued' if accepted else 'duplicate')
         except TimeoutError:
             return reply(408, 'timeout')

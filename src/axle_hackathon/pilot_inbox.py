@@ -10,6 +10,20 @@ from .pilot_memory import PilotMemory
 
 
 class PilotInbox(PilotMemory):
+    def begin_flow(self, user, chat, update_id):
+        """Durable at-most-one attempt for a volatile conversation transition."""
+        with self._lock:
+            carrier = self._carrier(user, chat)
+            if self.duplicate_update(user,chat,update_id,'flow'):
+                return None
+            if self._db.execute('SELECT count(*) FROM pilot_updates').fetchone()[0] >= 10000:
+                raise RuntimeError('Inbox capacity reached')
+            claim = token_urlsafe(24)
+            with self._db:
+                self._db.execute('INSERT INTO pilot_updates VALUES (?,?,?,?,?,?,?)',
+                    (update_id,carrier,'flow',None,None,'processing',claim))
+            return claim
+
     def duplicate_update(self, user, chat, update_id, action) -> bool:
         with self._lock:
             carrier = self._carrier(user, chat)
