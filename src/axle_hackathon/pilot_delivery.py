@@ -1,5 +1,5 @@
 """Bounded injected delivery attempts; no real messaging client or retries."""
-from concurrent.futures import ThreadPoolExecutor
+from .pilot_tracking import TrackedExecutor
 from threading import BoundedSemaphore
 
 
@@ -7,7 +7,7 @@ class DeliveryPool:
     def __init__(self, send, *, timeout=5, workers=2):
         self._send, self._timeout = send, timeout
         self._slots = BoundedSemaphore(workers)
-        self._executor = ThreadPoolExecutor(max_workers=workers,thread_name_prefix='pilot-send')
+        self._executor = TrackedExecutor(max_workers=workers,thread_name_prefix='pilot-send')
 
     def send(self, chat, text, guard, sender=None):
         if not self._slots.acquire(blocking=False):
@@ -29,6 +29,10 @@ class DeliveryPool:
         except Exception:
             # Timed-out I/O may still complete. Its slot stays occupied until it exits.
             raise RuntimeError('Delivery uncertain; no automatic retry') from None
+
+    @property
+    def drained(self):
+        return self._executor.drained.is_set()
 
     def close(self):
         self._executor.shutdown(wait=False,cancel_futures=False)

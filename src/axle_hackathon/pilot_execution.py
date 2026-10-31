@@ -1,5 +1,5 @@
 """Bounded offline execution wrappers; injected operations must enforce HTTP deadlines."""
-from concurrent.futures import ThreadPoolExecutor
+from .pilot_tracking import TrackedExecutor
 from math import isfinite
 from threading import BoundedSemaphore, Event, Lock, Thread
 
@@ -20,7 +20,7 @@ class BoundedDelegator:
         self._timeout = _seconds(timeout)
         self._delegator = delegator
         self._slot = BoundedSemaphore(1)
-        self._executor = ThreadPoolExecutor(max_workers=1, thread_name_prefix='pilot-model')
+        self._executor = TrackedExecutor(max_workers=1, thread_name_prefix='pilot-model')
 
     def evaluate(self, *args):
         if not self._slot.acquire(blocking=False):
@@ -35,6 +35,10 @@ class BoundedDelegator:
         try:return future.result(timeout=self._timeout)
         except Exception:
             raise RuntimeError('Provider outcome uncertain; no automatic retry') from None
+
+    @property
+    def drained(self):
+        return self._executor.drained.is_set()
 
     def close(self):
         self._executor.shutdown(wait=False, cancel_futures=False)

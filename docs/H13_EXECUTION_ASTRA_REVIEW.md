@@ -1,5 +1,7 @@
 # H13 execution and shutdown review
 
+Follow-up: [offline lifecycle owner](H13_LIFECYCLE_REVIEW.md).
+
 October 31, 2026. Baseline draft 2ec1fb9. Assistant source review and offline
 fault injection, not an independent audit or live service validation.
 
