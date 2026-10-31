@@ -60,7 +60,50 @@ facts, screenshot last. Inspect the new simulation label, numbered sequence,
 RPM explanation and execution summary. Exercise the three targets within the
 four-attempt/minute shared paid budget; each extraction/evaluation spends credits.
 Check desktop/mobile layout and readable evidence before recording. H11 live
-screenshots remain evidence for H11; H12 has not had a new live Mac rehearsal.
+screenshots remain evidence for H11; H12 owner live evidence is recorded below.
 
 Merge and any deployment remain owner approval steps. Native connector credential
 provisioning remains separate and deferred.
+
+## Owner-operated H12 evidence — October 31, 2026, America/New_York
+
+Tested branch head before this documentation update:
+`e2c7a235736a1895979c96ddc423f9c511295840`.
+Owner terminal reported **183 passed in 4.07s**. The requested static OpenAPI
+check produced no reported error; no separate exit-status capture was supplied.
+
+Owner screenshots at approximately 9:43–9:52 show the opening disclosure,
+simulation label, numbered sequence and three live screenshot-source results:
+
+| Confirmed target | Decision | Target revenue | Gap |
+| --- | --- | --- | --- |
+| 2.00 | NEGOTIATE | 480.00 | 60.00 |
+| 1.75 | ACCEPT | 420.00 | 0.00 |
+| Explicitly unknown | NEED_MORE_INFORMATION | null | null |
+
+All retain 240 total miles, loaded RPM 2.33, all-mile RPM 1.75, costs 290.00
+and surplus 130.00. Unknown target retains `carrier_unknown`, missing
+`carrier_revenue_target`, and its next question. Target-change comparisons
+render correctly. Screenshots alone do not establish the intermediate
+confirmation-invalidation interaction; that remains covered by offline checks.
+
+Each expanded trace shows `muse-spark-1.3`, recognized freight tool,
+`executed_and_validated`, `remote_https`, `deployed_axle_api`, canonical delivery,
+and `model_received_result: false`. API provenance shows synthetic box profile,
+`source: screenshot`, `model_invoked: false`, `native_connector: false`.
+The API model flag describes the deterministic evaluator, not external Meta
+selection. This evidence is owner-operated UI evidence, not independent
+network capture, repeated reliability or native connector execution.
+
+Owner Chrome responsive screenshots at approximately 9:53–9:55 use a
+390 × 905 emulated viewport. Header, 2 × 2 steps, screenshot preview,
+confirmations, form, stacked result, economics, execution summary, wrapped JSON
+and footer remain within the visible content width without apparent clipping.
+Upload buttons wrap heavily into multiple lines but remain legible; this is
+minor polish, not an observed blocker. These are desktop Chrome emulation
+screenshots, not physical-device, touch, keyboard or accessibility testing.
+The Network panel was empty; it adds no request-capture evidence. The retained
+unknown-target result is the same evaluation, not another live run.
+
+No new code change or paid rerun was needed for this documentation update.
+Remaining: owner merge approval, final timed recording and judge access plan.
