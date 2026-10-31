@@ -145,3 +145,14 @@ def test_complete_webhook_intake_to_mocked_model_delivery(inbox):
     d=PilotDelegator(s,NS(responses=NS(create=lambda **kw:response())))
     run_evaluation(s,d,send,user=1,chat=1,update_id=9)
     assert 'NEGOTIATE' in sent[-1] and '$300.00' in sent[-1]
+
+
+@pytest.mark.parametrize('action',['forget','expire','close'])
+def test_memory_lifecycle_clears_conversation_without_transport_cleanup(inbox,action):
+    s,_,_=inbox;f=PilotConversation(s);intake(f)
+    if action=='forget':s.forget(1,1)
+    elif action=='close':s.close()
+    else:
+        s._clock.advance(3600)
+        s.purge_expired()
+    assert f._flows=={}

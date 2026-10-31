@@ -1,5 +1,9 @@
 # H13 synthetic Telegram conversation candidate
 
+Follow-up: [integrated Astra findings](H13_INTEGRATED_REVIEW.md). Conversation values
+now share PilotMemory's clear/expiry/close lifecycle; direct withdrawal no longer relies
+on transport-specific cleanup. The historical cleanup caveat below is superseded.
+
 October 31, 2026. Based on draft head 4d87ad4. Offline injected transport only;
 no live bot, paid request, real carrier input, deployment or infrastructure change.
 

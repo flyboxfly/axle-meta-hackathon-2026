@@ -7,7 +7,7 @@ from .pilot import CostItem, Opportunity, Profile
 class PilotConversation:
     def __init__(self, inbox):
         self.inbox = inbox
-        self._flows = {}
+        self._flows = inbox._conversation_states
 
     def clear(self,user,chat):
         with self.inbox._lock:
@@ -80,6 +80,8 @@ class PilotConversation:
                     raise ValueError('Choose session or remember')
                 access = self.inbox.consent(user, chat, flow['notice'].token, choices[value])
                 flow['token'] = access.token
+                # Consent clears previous state; retain only this newly acknowledged flow.
+                self._flows[carrier] = flow
                 if value=='remember':
                     saved=self.inbox.load_profile(user,chat,access.token)
                     flow['saved_version']=saved.version if saved else None

@@ -83,6 +83,7 @@ class PilotMemory:
         self._sessions = PilotSessions(bindings)
         self._notices: dict[str, Disclosure] = {}
         self._active: dict[str, Access] = {}
+        self._conversation_states: dict[str, dict] = {}
         self._owner_file = None
         if str(path) != ':memory:':
             # Keep a separate lock inode; never unlink it while another owner may start.
@@ -119,6 +120,7 @@ class PilotMemory:
                 return
             self._closed = True
             self._active.clear()
+            self._conversation_states.clear()
             self._notices.clear()
             self._sessions = PilotSessions(self._bindings)
             self._db.close()
@@ -140,6 +142,7 @@ class PilotMemory:
         return self._bindings[(user, chat)]
 
     def _clear(self, carrier: str):
+        self._conversation_states.pop(carrier, None)
         self._active.pop(carrier, None)
         self._notices.pop(carrier, None)
         # All owner-approved bindings for a carrier share one carrier session.
@@ -299,5 +302,8 @@ class PilotMemory:
             for carrier, notice in tuple(self._notices.items()):
                 if notice.expires_at <= now:
                     self._notices.pop(carrier, None)
+                    flow = self._conversation_states.get(carrier)
+                    if flow is not None and flow['step'] == 'memory':
+                        self._conversation_states.pop(carrier, None)
             with self._db:
                 self._db.execute('DELETE FROM pilot_profiles WHERE expires_at<=?', (now.timestamp(),))
