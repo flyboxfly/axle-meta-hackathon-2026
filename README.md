@@ -1,4 +1,4 @@
-> **Next phase — proposed Telegram carrier pilot:** See [H13 specification](docs/H13_TELEGRAM_PILOT.md) and [runtime role definitions](docs/agents/README.md). These documents define the next build; Telegram, persistent carrier profiles and real-data specialist coordination are not implemented by this change. Existing synthetic behavior remains unchanged.
+> **H13 — offline carrier planning core; Telegram pilot proposed:** See [H13 specification](docs/H13_TELEGRAM_PILOT.md), [implemented scope and evidence](docs/H13_CORE_REVIEW.md) and [runtime role definitions](docs/agents/README.md). The separate pure Python core supports confirmed revision snapshots, cost normalization and profile metadata. Telegram, persistent carrier profiles and real-data specialist coordination remain unbuilt. Existing synthetic behavior remains unchanged.
 
 # Axle × Meta — local freight prototype
 

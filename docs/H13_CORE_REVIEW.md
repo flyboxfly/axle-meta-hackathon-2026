@@ -1,6 +1,7 @@
 # H13 pilot core — offline implementation
 
-October 31, 2026. Based on design commit 3c1603f. No deployment or paid calls.
+October 31, 2026. Initial core based on design commit 3c1603f; normalization slice
+based on GitHub-verified draft head acb03c6. No deployment or paid calls.
 
 Adds an isolated pure Python pilot module; existing synthetic evaluator, routes,
 model prompts and reviewer contract are unchanged. This is not yet Telegram or
@@ -14,6 +15,22 @@ runtime multi-agent orchestration.
 - Complete cost categories or explicit unknowns, CPM inclusion/exclusion checks,
   covered-rental maintenance and duplicate-category rejection.
 - Planning reserves kept labeled; totals/surplus are not accounting profit.
+- Explicit cost methods: per-mile, per-trip, per-hour, period allocation, or fuel
+  price per US gallon / miles per US gallon. Fuel applies to all operating miles.
+  Hourly costs require supplied total trip hours, including applicable dwell/handling.
+  Weekly/monthly/yearly allocations require cost and utilization periods to match;
+  missing utilization stays unresolved. No automatic calendar conversion or mileage forecast.
+  Original amounts, source and allocation/fuel inputs remain in the frozen profile.
+  Intermediate arithmetic is not rounded to CPM; displayed money rounds to cents.
+- Results identify calculator pilot-v2, itemized cost breakdown and a separate
+  declared-CPM component. Separately rounded lines may differ slightly from total.
+  Known component estimates may appear with an unresolved total; they do not establish
+  cost completeness, applicability or independently verified rental/insurance terms.
+- Optional unit/role metadata with timezone-aware effective/recorded times; optional
+  effective time per cost. Software records distinguish subscribed/planned/interested
+  with source. These supplied facts grant no integration access or processing consent.
+- Session confirmation records server UTC time for the entire revision. Edits reset
+  confirmation and its timestamp; this is not per-field confirmation or freshness enforcement.
 - Server-supplied binding map checks every session operation. Profiles remain in
   process memory; returned immutable snapshots cannot change stored confirmations.
 - Optimistic revisions and renewed confirmation after every edit, including target
@@ -25,14 +42,16 @@ runtime multi-agent orchestration.
 The trusted adapter must authenticate numeric Telegram IDs and private-chat status;
 this module does not authenticate users. Its binding map is not a model tool argument.
 There is no endpoint or credential processing here. Session expiry, revocation,
-consent workflow, persistence, field-level confirmation timestamps, software status
-schema, detailed schedule evaluation, model adapters and webhook dedup remain unbuilt.
+consent workflow, persistence, field-level confirmation timestamps, freshness policy,
+detailed schedule evaluation, model adapters and webhook dedup remain unbuilt.
 No claim of complete hosted tenant isolation follows from these unit tests.
 
-Cost amounts are already normalized carrier-supplied planning allocations. Fuel
-price/MPG conversion, period/utilization allocation, rental included-mile allowances,
-overage tiers, custom chargeable-mile rules and insurance coverage validation are
-not supported yet. Do not translate such agreements into this calculator silently.
+Cost amounts and assumptions are carrier-supplied planning inputs. Period allocation
+is amount * trip operating miles / supplied operating miles in the same period;
+it is a utilization-based planning share, not a rental invoice or duration-based charge.
+Rental included-mile allowances, overage tiers, custom chargeable-mile rules, differing
+labor-hour bases within one trip, and insurance coverage validation remain unsupported.
+Do not translate such agreements into this calculator silently.
 Insurance totals must include applicable carrier-confirmed coverages; trailer
 interchange is not automatically inferred. Maintenance covered by rental can be
 zero/not applicable explicitly; uncovered work requires a separate clarified scope
@@ -40,7 +59,12 @@ before the current coverage restriction can be relaxed. Equipment labels are
 recorded, not verified capacity/compliance. Schedule is an explicit supplied
 assertion, not a routing or HOS check. Supplied CPM inclusions are carrier assertions.
 
-## Validation
+The offline pilot software field now requires structured records instead of strings;
+no persisted profiles or deployed consumers existed to migrate. Synthetic contracts
+and dependencies are unchanged. Direct calculate(Snapshot(..., confirmed=True)) remains
+a trusted offline helper; a timestamp or metadata alone never authenticates a carrier.
+
+## Initial core validation
 Assistant Linux with unchanged requirements.lock.txt in isolated temporary venv:
 - Full pytest: 199 passed (183 existing + 16 new).
 - pip check: no broken requirements.
@@ -56,6 +80,19 @@ unknown miles/costs/target/coverage, frozen profiles, schedule decisions, explic
 CPM exclusions, rental mileage/maintenance, reserves, invalid numbers and duplicate
 cost rejection. Fixtures are invented test data, not actual carrier records.
 
-Next: expand validated intake cost adapters and metadata, then consent/profile
-storage and Meta/Telegram execution. No real-carrier data before those boundaries
+## Normalization slice validation
+Assistant Linux, October 31, 2026, same isolated venv and unchanged lock:
+- Focused initial run: 35 passed; subsequently added weekly-rental allocation case.
+- Final full pytest: 219 passed in 2.97s (183 original + 16 initial pilot + 20 normalization).
+- pip check: no broken requirements.
+- PYTHONPATH=src python scripts/export_reviewer_openapi.py --check: passed.
+- git diff --check: passed.
+
+New cases exercise whole-trip fuel/hourly/period costs, missing versus zero inputs,
+weekly/monthly/yearly utilization, incompatible periods, ambiguous cost methods,
+invalid numbers, rounding, separate rental base/mileage/covered maintenance,
+CPM inclusion overlap, metadata/software validation, and confirmation invalidation.
+All fixtures are invented; no live bot, provider call, carrier data or hosting was tested.
+
+Next: consent/profile storage, then Meta/Telegram execution. No real-carrier data before those boundaries
 are implemented and verified. Merge and deployment remain separate owner decisions.

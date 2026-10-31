@@ -4,22 +4,89 @@ Binding is supplied by a trusted authenticated adapter, never by model output.
 This in-memory store is not a hosted multi-process storage implementation.
 """
 from dataclasses import dataclass
+from datetime import datetime, timezone
 from decimal import Decimal, ROUND_HALF_UP
 from threading import RLock
 from typing import Literal
-from pydantic import BaseModel, ConfigDict, Field, model_validator
+from pydantic import AwareDatetime, BaseModel, ConfigDict, Field, model_validator
 
 
 class Frozen(BaseModel):
     model_config = ConfigDict(extra='forbid', frozen=True, allow_inf_nan=False)
 
 
+class PeriodAllocation(Frozen):
+    """Carrier-supplied utilization for the SAME period as the cost amount."""
+    cost_period: Literal['week', 'month', 'year']
+    utilization_period: Literal['week', 'month', 'year']
+    operating_miles: Decimal | None = Field(default=None, gt=0, le=1000000)
+    source: str = Field(min_length=1, max_length=200)
+
+    @model_validator(mode='after')
+    def matching_periods(self):
+        if self.cost_period != self.utilization_period:
+            raise ValueError('Cost and utilization periods must match; no implicit conversion')
+        return self
+
+
+class FuelEstimate(Frozen):
+    price_per_us_gallon: Decimal | None = Field(default=None, ge=0, le=100)
+    miles_per_us_gallon: Decimal | None = Field(default=None, gt=0, le=1000)
+
+
+class SoftwareRecord(Frozen):
+    name: str = Field(min_length=1, max_length=100)
+    status: Literal['subscribed', 'planned', 'interested']
+    source: str = Field(min_length=1, max_length=200)
+
+
+class ProfileMetadata(Frozen):
+    unit_id: str | None = Field(default=None, min_length=1, max_length=80)
+    carrier_role: Literal['owner_operator', 'fleet_owner', 'dispatcher', 'driver'] | None = None
+    effective_at: AwareDatetime
+    recorded_at: AwareDatetime
+
+
 class CostItem(Frozen):
     name: Literal['fuel', 'driver', 'insurance', 'truck_base', 'rental_mileage',
                   'maintenance', 'tolls', 'miscellaneous', 'contingency']
     amount: Decimal | None = Field(default=None, ge=0, le=1000000)
-    basis: Literal['per_mile', 'per_trip']
+    basis: Literal['per_mile', 'per_trip', 'per_hour', 'per_period', 'fuel_mpg']
     source: str = Field(min_length=1, max_length=200)
+    allocation: PeriodAllocation | None = None
+    fuel: FuelEstimate | None = None
+    effective_at: AwareDatetime | None = None
+
+    @model_validator(mode='after')
+    def method(self):
+        if (self.basis == 'per_period') != (self.allocation is not None):
+            raise ValueError('Period costs require an explicit allocation only on per_period items')
+        if self.basis == 'fuel_mpg':
+            if self.name != 'fuel' or self.fuel is None or self.amount is not None:
+                raise ValueError('Fuel MPG method requires fuel inputs and no separate amount')
+        elif self.fuel is not None:
+            raise ValueError('Fuel inputs require fuel_mpg basis')
+        return self
+
+    def missing_inputs(self) -> tuple[str, ...]:
+        if self.basis == 'fuel_mpg':
+            return tuple('fuel:' + key for key in ('price_per_us_gallon', 'miles_per_us_gallon')
+                         if getattr(self.fuel, key) is None)
+        missing = ['cost:' + self.name] if self.amount is None else []
+        if self.allocation is not None and self.allocation.operating_miles is None:
+            missing.append('utilization:' + self.name)
+        return tuple(missing)
+
+    def trip_amount(self, miles: Decimal, hours: Decimal | None) -> Decimal:
+        if self.missing_inputs() or (self.basis == 'per_hour' and hours is None):
+            raise ValueError('Unresolved cost inputs')
+        if self.basis == 'fuel_mpg':
+            return miles / self.fuel.miles_per_us_gallon * self.fuel.price_per_us_gallon
+        if self.basis == 'per_period':
+            return self.amount * miles / self.allocation.operating_miles
+        if self.basis == 'per_hour':
+            return self.amount * hours
+        return self.amount * miles if self.basis == 'per_mile' else self.amount
 
 
 class Profile(Frozen):
@@ -33,7 +100,8 @@ class Profile(Frozen):
     maintenance_covered_by_rental: bool | None = None
     target_all_mile_rpm: Decimal | None = Field(default=None, gt=0, le=1000)
     priorities: tuple[str, ...] = ()
-    software: tuple[str, ...] = ()
+    software: tuple[SoftwareRecord, ...] = ()
+    metadata: ProfileMetadata | None = None
     source: str = Field(min_length=1, max_length=200)
 
     @model_validator(mode='after')
@@ -62,6 +130,8 @@ class Opportunity(Frozen):
     loaded_miles: Decimal = Field(gt=0, le=100000)
     deadhead_miles: Decimal | None = Field(default=None, ge=0, le=100000)
     reposition_miles: Decimal | None = Field(default=None, ge=0, le=100000)
+    # Total compensated/planned trip time, including supplied dwell/handling.
+    trip_hours: Decimal | None = Field(default=None, ge=0, le=10000)
     schedule: Literal['feasible', 'conflict', 'unknown'] = 'unknown'
     scope: str = Field(min_length=1, max_length=2000)
     origin: Literal['real_offer', 'synthetic']
@@ -75,6 +145,7 @@ class Snapshot:
     profile: Profile
     opportunity: Opportunity
     confirmed: bool = False
+    confirmed_at: datetime | None = None
 
 
 def money(value):
@@ -98,17 +169,20 @@ def calculate(snapshot: Snapshot) -> dict:
             missing.append('rental_maintenance_coverage')
     names = {i.name for i in p.items} | set(p.cpm_includes)
     missing.extend('cost:' + name for name in sorted(required - names))
-    missing.extend('cost:' + i.name for i in p.items if i.amount is None)
-    cost_missing = any(m.startswith(('cost:', 'rental_')) for m in missing)
+    missing.extend(key for i in p.items for key in i.missing_inputs())
+    if o.trip_hours is None and any(i.basis == 'per_hour' for i in p.items):
+        missing.append('trip_hours')
+    cost_missing = any(m.startswith(('cost:', 'rental_', 'fuel:', 'utilization:', 'trip_hours'))
+                       for m in missing)
     cost = None
     reserve = None
     if miles is not None and not cost_missing:
         cost = (p.cpm * miles if p.mode == 'all_in_cpm' else Decimal(0))
         for i in p.items:
-            cost += i.amount * miles if i.basis == 'per_mile' else i.amount
+            cost += i.trip_amount(miles, o.trip_hours)
         # A CPM containing contingency does not identify the reserve separately.
         reserve = None if 'contingency' in p.cpm_includes else sum(
-            (i.amount * miles if i.basis == 'per_mile' else i.amount)
+            i.trip_amount(miles, o.trip_hours)
             for i in p.items if i.name == 'contingency')
     if p.target_all_mile_rpm is None:
         missing.append('target_all_mile_rpm')
@@ -122,7 +196,15 @@ def calculate(snapshot: Snapshot) -> dict:
         decision = 'NEGOTIATE' if o.payout < target or o.payout <= cost else 'ACCEPT'
     return dict(revision=snapshot.revision, profile_source=p.source,
                 opportunity_origin=o.origin, operating_scenario=o.operation,
-                calculator='pilot-v1', decision=decision, missing=missing,
+                calculator='pilot-v2', decision=decision, missing=missing,
+                confirmed_at=snapshot.confirmed_at.isoformat() if snapshot.confirmed_at else None,
+                declared_cpm_cost=money(p.cpm * miles)
+                    if p.mode == 'all_in_cpm' and miles is not None else None,
+                cost_breakdown=tuple(dict(name=i.name, basis=i.basis, source=i.source,
+                    amount=money(i.trip_amount(miles, o.trip_hours))
+                    if miles is not None and not i.missing_inputs()
+                    and (i.basis != 'per_hour' or o.trip_hours is not None) else None)
+                    for i in p.items),
                 total_miles=str(miles) if miles is not None else None,
                 loaded_rpm=money(o.payout/o.loaded_miles),
                 all_mile_rpm=money(o.payout/miles) if miles is not None else None,
@@ -174,7 +256,7 @@ class PilotSessions:
             s = self._sessions[carrier]
             if s.revision != revision:
                 raise ValueError('Stale confirmation')
-            s = Snapshot(s.revision, s.profile, s.opportunity, True)
+            s = Snapshot(s.revision, s.profile, s.opportunity, True, datetime.now(timezone.utc))
             self._sessions[carrier] = s
             return s
 

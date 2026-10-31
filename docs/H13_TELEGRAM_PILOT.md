@@ -1,9 +1,10 @@
 # H13 — carrier pilot specification
 
-Status: design baseline only. Prepared October 31, 2026.
-Base inspected: main 8358f191f0251995687ba7dda21ede4a88c9af15; no open PRs.
-Repository recursive tree has no existing AGENTS.md.
-No runtime, deployment, new credentials, paid model call or real-data processing is added here.
+Status: target specification with a separate offline core implemented. Prepared October 31, 2026.
+Latest inspection: main 8358f191f0251995687ba7dda21ede4a88c9af15; open draft PR #14
+head acb03c60f65dab02b2c4a99f57812eb7de453b29 before this cost-normalization slice.
+Read [implemented scope and evidence](H13_CORE_REVIEW.md) for actual behavior.
+No live agent runtime, deployment, new credentials, paid model call or real-data processing is added here.
 
 ## Goal
 Carrier sends an authorized real opportunity in Telegram; Meta extracts draft facts;
