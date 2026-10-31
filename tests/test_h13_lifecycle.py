@@ -88,3 +88,26 @@ def test_active_request_prevents_storage_release(tmp_path,monkeypatch):
         assert all(life.close(timeout=1).values())
     try:asyncio.run(exercise())
     finally:life.close(timeout=1)
+
+
+def test_shutdown_wait_does_not_block_request_rejection(tmp_path,monkeypatch):
+    from concurrent.futures import ThreadPoolExecutor
+    life=owner(tmp_path,lambda s:None);entered,release=Event(),Event()
+    original=life.scheduler.close
+    def delayed_close(*,timeout):
+        entered.set();assert release.wait(2)
+        return original(timeout=timeout)
+    monkeypatch.setattr(life.scheduler,'close',delayed_close)
+    async def post():
+        async with httpx.AsyncClient(transport=httpx.ASGITransport(app=life),base_url='http://testserver') as c:
+            return await c.post('/telegram/webhook',json=update('/start',id=1))
+    with ThreadPoolExecutor(max_workers=2) as pool:
+        closing=pool.submit(life.close,timeout=1)
+        try:
+            assert entered.wait(1)
+            with pytest.raises(RuntimeError,match='Shutdown already in progress'):
+                life.close(timeout=.01)
+            request=pool.submit(asyncio.run,post())
+            assert request.result(timeout=.3).status_code==503
+        finally:release.set()
+        assert closing.result(timeout=1)['storage_released']

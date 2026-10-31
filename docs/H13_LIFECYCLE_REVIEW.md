@@ -1,5 +1,7 @@
 # H13 offline lifecycle owner candidate
 
+Follow-up: [lifecycle ownership review](H13_LIFECYCLE_ASTRA_REVIEW.md).
+
 October 31, 2026. Baseline draft f269086. Injected fake providers/senders and
 invented records only; no live launcher, transport configuration or credentials.
 

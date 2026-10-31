@@ -15,6 +15,7 @@ class PilotLifecycle:
                  webhook_secret, allowed_host, global_limit, carrier_limit,
                  provider_timeout, interval):
         self._lock = Lock()
+        self._close_lock = Lock()
         self._closing = False
         self._started = False
         self._requests = 0
@@ -60,8 +61,10 @@ class PilotLifecycle:
 
     def close(self, *, timeout):
         _seconds(timeout)
-        with self._lock:
-            self._closing = True
+        if not self._close_lock.acquire(blocking=False):
+            raise RuntimeError('Shutdown already in progress')
+        try:
+            with self._lock:self._closing = True
             scheduler = self.scheduler.close(timeout=timeout)
             self.provider.close()
             self.delivery.close()
@@ -71,3 +74,5 @@ class PilotLifecycle:
             if all(status.values()) and not self.inbox._closed:self.inbox.close()
             status['storage_released'] = self.inbox._closed
             return status
+        finally:
+            self._close_lock.release()
