@@ -1,5 +1,20 @@
 # Axle × Meta — local freight prototype
 
+## H11 remote browser integration — review candidate
+
+An explicit remote mode lets the protected local browser's Meta-selected tool
+call the deployed synthetic Axle API over authenticated HTTPS. Facts and target
+choice require carrier confirmation; credentials stay server-side. Failures have
+no local fallback. The browser displays canonical API results without a second
+model request. This is not native Muse integration.
+
+See [H11 review and private Mac validation](docs/H11_REVIEW.md),
+[reviewer API documentation](docs/connector/README.md),
+[static OpenAPI](docs/connector/openapi.json), and
+[Muse submission preparation](docs/connector/SUBMISSION_PREPARATION.md).
+Historical sections below describe earlier slices; H10 deployment evidence is
+the operational record for the separate deployed API. H11 does not redeploy it.
+
 ## H6 fresh-page rehearsal
 
 Owner screenshots on merged main a0f82ec verify fresh-page screenshot extraction,

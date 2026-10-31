@@ -1,6 +1,5 @@
 """Loopback-only carrier interface. No public deployment boundary is claimed."""
 import base64
-from decimal import Decimal
 import logging
 import os
 from pathlib import Path
@@ -13,7 +12,9 @@ from typing import Literal
 from starlette.concurrency import run_in_threadpool
 from fastapi import APIRouter, Depends, HTTPException, Request
 from fastapi.responses import HTMLResponse
-from pydantic import BaseModel, ConfigDict, Field, model_validator
+from pydantic import BaseModel, ConfigDict, Field, StrictBool, model_validator
+from .axle_api import AxleEvaluationRequest, ConfirmedBenchmark
+from .remote_client import RemoteFailure, browser_transport, load_client_config, evaluate_remote
 from .economics import evaluate
 from .meta_agent import BASE_URL, MODEL, delegate_for_browser
 from .schemas import Opportunity
@@ -23,11 +24,8 @@ router = APIRouter()
 _gate = threading.Lock()
 _attempts = deque()
 
-class CarrierBenchmark(BaseModel):
+class CarrierBenchmark(ConfirmedBenchmark):
     """Authenticated form assertion, separate from model tool and screenshot facts."""
-    model_config = ConfigDict(extra="forbid", allow_inf_nan=False)
-    target_all_mile_rpm: Decimal | None = Field(gt=0, le=100, decimal_places=2)
-    confirmed: Literal[True]
 
 
 class WebRequest(BaseModel):
@@ -37,6 +35,7 @@ class WebRequest(BaseModel):
     benchmark: CarrierBenchmark | None = None
     source: Literal["manual", "screenshot"] = "manual"
     screenshot_confirmed: bool = False
+    facts_confirmed: StrictBool = False
 
     @model_validator(mode="after")
     def require_screenshot_confirmation(self):
@@ -76,16 +75,29 @@ def live_run(body: WebRequest):
     key = os.environ.get("MODEL_API_KEY")
     if not key:
         raise HTTPException(503, "Meta credentials are not configured on this server")
+    mode = browser_transport()
+    remote_config = None
+    remote_request = None
+    remote_result = None
+    if mode == "remote":
+        if body.benchmark is None or not body.facts_confirmed:
+            raise HTTPException(422, "Confirm the opportunity facts and revenue target choice before remote evaluation")
+        remote_config = load_client_config()
+        remote_request = AxleEvaluationRequest(opportunity=body.opportunity,
+            benchmark=body.benchmark, facts_confirmed=body.facts_confirmed, source=body.source)
     canonical = body.opportunity
     executions = 0
     def execute(op):
-        nonlocal executions
+        nonlocal executions, remote_result
         executions += 1
         if executions > 1:
             raise ValueError("One evaluation per browser request")
         # The model must preserve every supplied fact, including unknowns.
         if op != canonical:
             raise ValueError("Delegated facts differ from confirmed carrier inputs")
+        if mode == "remote":
+            remote_result = evaluate_remote(remote_request, remote_config)
+            return remote_result.evaluation
         if body.benchmark is None:
             # Compatibility for H1/H2 clients; explicitly labeled synthetic default.
             return evaluate(op)
@@ -95,8 +107,12 @@ def live_run(body: WebRequest):
         result = delegate_for_browser(client, body.message + "\nConfirmed structured facts follow. Use these exactly; null means unknown.\n" + canonical.model_dump_json(), execute)
     if len(result["evaluations"]) != 1:
         raise ValueError("Expected exactly one freight evaluation")
+    for item in result["trace"]:
+        item["transport"] = "remote_https" if mode == "remote" else "in_process"
+        item["evaluation_origin"] = "deployed_axle_api" if mode == "remote" else "local_evaluator"
+    extra = {"canonical_api_result": remote_result.model_dump(mode="json")} if remote_result is not None else {}
     return {"model": MODEL, "evaluation": result["evaluations"][0], "trace": result["trace"],
-            "response_id": result["response_id"], "integration": "Meta API prototype; no native connector"}
+            "response_id": result["response_id"], "integration": "Meta API prototype; no native connector", **extra}
 
 
 @contextmanager
@@ -114,6 +130,10 @@ def paid_slot():
             yield
         except HTTPException:
             raise
+        except RemoteFailure as exc:
+            logger.warning("Axle remote evaluation failed category=%s", exc.category)
+            code = 503 if exc.category == "configuration" else 502
+            raise HTTPException(code, "Remote Axle evaluation could not be verified. Your inputs are preserved; no local fallback was used.") from None
         except Exception as exc:
             # Log only bounded metadata, never provider bodies, tool arguments or secrets.
             from openai import APITimeoutError, APIConnectionError, APIStatusError
