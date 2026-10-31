@@ -1,4 +1,25 @@
-# Muse Technical specs — prepared entries, not submitted
+# Muse Technical specs — submission status and historical preparation
+
+## Status update — October 31, 2026
+
+Owner handoff reports the initial application **Submitted**, business verification
+**Approved**, data processing questionnaire **In review**, and Technical details
+**Action needed** (2 of 3 requirements complete). Submission ID:
+`4e022960-47d3-4d0f-9bd4-e384ab6955e8`.
+
+The Credentials screen now shows API key / OAuth / Unauthenticated options.
+API key is selected with label “Axle synthetic reviewer access”; the key is empty.
+No reviewer token has been provisioned. The screen does not establish storage
+protections, model exclusion, Authorization-header handling or Bearer prefixing.
+Dedicated reviewer access remains deferred to prioritize the November 4 demo.
+Do not use the owner's shared token. Native Muse execution remains unverified.
+
+Initial submission and terms acceptance were owner-authorized and completed;
+they must not be repeated as prerequisites. The October 30 preparation below is
+historical and predates this submission. This update records the owner's handoff,
+not a new portal inspection or acceptance of questionnaire disclosures by Meta.
+
+## Historical H11 preparation — October 30, 2026
 
 The owner's October 30 Technical specs screenshot shows Raw API / Existing MCP,
 API URL, optional OpenAPI URL, API/MCP documentation URL, and Access requirements.

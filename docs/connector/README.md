@@ -1,5 +1,26 @@
 # Axle synthetic freight evaluation — reviewer API documentation
 
+## Status update — October 31, 2026
+
+Owner handoff reports the initial application **Submitted**, business verification
+**Approved**, data processing questionnaire **In review**, and Technical details
+**Action needed** (2 of 3 requirements complete). Submission ID:
+`4e022960-47d3-4d0f-9bd4-e384ab6955e8`.
+
+The Credentials screen now shows API key / OAuth / Unauthenticated options.
+API key is selected with label “Axle synthetic reviewer access”; the key is empty.
+No reviewer token has been provisioned. The screen does not establish storage
+protections, model exclusion, Authorization-header handling or Bearer prefixing.
+Dedicated reviewer access remains deferred to prioritize the November 4 demo.
+Do not use the owner's shared token. Native Muse execution remains unverified.
+
+Initial submission and terms acceptance were owner-authorized and completed;
+they must not be repeated as prerequisites. The October 30 preparation below is
+historical and predates this submission. This update records the owner's handoff,
+not a new portal inspection or acceptance of questionnaire disclosures by Meta.
+
+## API documentation — H11 contract unchanged
+
 Operator: Fly Box Fly LLC. Support/privacy: contact@flyboxfly.com.
 Product: https://axle.flyboxfly.com · [Privacy](https://axle.flyboxfly.com/privacy)
 · [Terms](https://axle.flyboxfly.com/terms).
@@ -54,9 +75,8 @@ existing token as a shortcut.
 
 Credential handoff is **blocked pending a verified secure portal/reviewer flow**.
 Meta's [guidelines](https://platform.muse.ai/docs), sections 5 and 5.4–5.5,
-request integration/test credentials through secure instructions. Neither those
-guidelines nor the supplied Technical specs screenshot specifies the actual
-secret-entry mechanism or confirms custom Authorization-header support.
+request integration/test credentials through secure instructions. The October 31 credential-entry screen establishes an entry UI but does not
+confirm storage protections, model exclusion or Authorization-header behavior.
 Review any credential UI before entering a value. Do not request a new key,
 rotate the deployed token, or provision account access without owner authorization.
 
