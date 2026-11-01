@@ -1,10 +1,13 @@
 """Dedicated synthetic owner-test launcher candidate. Never import-starts a listener."""
 import asyncio
+from contextlib import contextmanager, nullcontext
 import json
 import logging
 import os
 from pathlib import Path
 import stat
+import signal
+import threading
 import sys
 import uvicorn
 from .pilot_factory import build_synthetic_host
@@ -29,7 +32,9 @@ def read_private_config(path):
                     if key in value:raise ValueError()
                     value[key]=item
                 return value
-            data=json.loads(file.read(8193),object_pairs_hook=unique)
+            raw=file.read(8193)
+            if len(raw)>8192:raise ValueError()
+            data=json.loads(raw,object_pairs_hook=unique)
         keys={'approved_synthetic_owner_test','provider_key','bot_token','webhook_secret',
               'allowed_host','user_id','chat_id'}
         if set(data)!=keys or data['approved_synthetic_owner_test'] is not True:raise ValueError()
@@ -46,19 +51,45 @@ def configure_private_logging():
     logging.disable(sys.maxsize)
 
 
+class PrivateServer(uvicorn.Server):
+    def capture_signals(self):
+        # The launcher owns signals through drain; Uvicorn must not replay them.
+        return nullcontext()
+
+
+@contextmanager
+def private_signals(server):
+    if threading.current_thread() is not threading.main_thread():
+        raise RuntimeError('Pilot launcher requires the main thread')
+    def stop(signum, frame):
+        # Repeated graceful signals never bypass retained-owner cleanup.
+        server.should_exit=True
+    previous={}
+    try:
+        for sig in (signal.SIGINT,signal.SIGTERM):
+            previous[sig]=signal.signal(sig,stop)
+        yield
+    finally:
+        for sig,handler in previous.items():signal.signal(sig,handler)
+
+
 async def serve_host(host):
     config=uvicorn.Config(host,host='127.0.0.1',port=8013,workers=1,reload=False,
         lifespan='on',proxy_headers=False,access_log=False,log_config=None,
         ws='none',limit_concurrency=16,backlog=16,timeout_keep_alive=2,
         timeout_graceful_shutdown=6,h11_max_incomplete_event_size=8192)
-    try:await uvicorn.Server(config).serve()
-    finally:
-        # Uvicorn lifespan failure is not proof of drain. Retain the owner/process.
-        while True:
-            try:status=await asyncio.to_thread(host.owner.close,timeout=6)
-            except Exception:status={}
-            if status and all(status.values()):break
-            await asyncio.sleep(1)
+    server=PrivateServer(config)
+    with private_signals(server):
+        try:
+            await server.serve()
+            if not server.started:raise RuntimeError('Pilot server did not start')
+        finally:
+            # Keep graceful signal handling installed until ownership is released.
+            while True:
+                try:status=await asyncio.to_thread(host.owner.close,timeout=6)
+                except Exception:status={}
+                if status and all(status.values()):break
+                await asyncio.sleep(1)
 
 
 def main():

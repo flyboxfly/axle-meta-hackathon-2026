@@ -30,8 +30,9 @@ isolated route; loopback binding alone is not a Telegram deployment.
 After server exit it repeatedly inspects owner.close off-loop, waiting one second
 between incomplete/failed attempts. It returns only after all drain fields report
 complete, retaining the owner otherwise. This can wait indefinitely for hung I/O or
-client cleanup. Second signals, process-manager termination and event-loop teardown
-can still interrupt it. No hard total network/process deadline is claimed. SQLite
+client cleanup. Graceful SIGINT/SIGTERM handling now remains installed through drain, without
+signal replay or a second-signal fast exit. Forced process-manager termination,
+SIGKILL and event-loop teardown can still interrupt it. No hard total network/process deadline is claimed. SQLite
 still executes synchronously in the webhook handler. The connection limit bounds
 all inbound traffic and can reject /forget during total connection saturation; the
 separate conversation slots preserve privacy admission only within that host limit.
