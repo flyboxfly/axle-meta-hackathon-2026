@@ -17,19 +17,27 @@ def build(tmp_path):
 
 
 def test_full_host_http_rehearsal_and_shutdown(tmp_path,monkeypatch):
-    clients=[];sent=[];models=[];delivered=Event()
+    clients=[];sent=[];models=[];delivered=Event();options=[]
     def handle(request):
         payload=json.loads(request.content)
         if request.url.host=='api.meta.ai':
+            assert request.extensions['timeout']=={'connect':3,'read':10,'write':3,'pool':1}
             models.append(payload)
             return response(200,json_value={'status':'completed','output':[{'type':'function_call',
                 'status':'completed','name':'review_confirmed_planning','arguments':'{"revision":1}'}]})
+        assert request.url.host=='api.telegram.org'
+        assert request.extensions['timeout']=={'connect':2,'read':3,'write':2,'pool':1}
         sent.append(payload['text'])
         if 'NEGOTIATE' in sent[-1]:delivered.set()
         return response(200,json_value={'ok':True,'result':{'message_id':len(sent),
             'chat':{'id':1,'type':'private'}}})
+    real_client=factory.create_http_client
+    def transport(**kwargs):
+        options.append(kwargs)
+        return httpx.MockTransport(handle)
     def client(**kwargs):
-        c=httpx.Client(transport=httpx.MockTransport(handle));clients.append(c);return c
+        c=real_client(**kwargs);clients.append(c);return c
+    monkeypatch.setattr(httpx,'HTTPTransport',transport)
     monkeypatch.setattr(factory,'create_http_client',client)
     host=build(tmp_path)
     with TestClient(host) as c:
@@ -51,6 +59,9 @@ def test_full_host_http_rehearsal_and_shutdown(tmp_path,monkeypatch):
         post('/forget',10)
         assert not host.owner.inbox._active
     assert all(host.last_shutdown.values()) and all(c.is_closed for c in clients)
+    assert [o['limits'].max_connections for o in options]==[1,2]
+    assert all(o['retries']==0 and o['trust_env'] is False for o in options)
+    assert all(c.follow_redirects is False for c in clients)
 
 
 def test_factory_cleans_first_client_when_second_creation_fails(tmp_path,monkeypatch):

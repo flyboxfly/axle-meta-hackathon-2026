@@ -1,5 +1,7 @@
 # H13 fixed composition and offline rehearsal
 
+Follow-up: [configuration review and owner-test plan](H13_FACTORY_ASTRA_REVIEW.md).
+
 October 31, 2026. Baseline c31e995. Invented records and fake HTTP transports only.
 
 build_synthetic_host composes the reviewed HTTP clients, direct Responses adapter,
