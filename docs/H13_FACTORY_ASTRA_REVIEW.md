@@ -1,5 +1,7 @@
 # H13 composition review and owner rehearsal plan
 
+Follow-up: [isolated launch candidate](H13_LAUNCH_REVIEW.md).
+
 November 1, 2026. Reviewed draft 74b4622. Offline assistant review; not an independent
 audit or live-provider validation.
 
