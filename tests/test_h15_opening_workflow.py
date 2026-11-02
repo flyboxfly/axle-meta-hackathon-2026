@@ -499,6 +499,25 @@ def test_media_before_consent_rejected_without_fetch(tmp_path, monkeypatch):
         store.close()
 
 
+def test_carrier_zero_weight_marks_placeholder_clarification(store):
+    _, conversation, _ = ready_revision(store)
+    conversation.handle(1, 1, 'weight 0')
+    snapshot = store._opening.get(1, 1)
+    assert snapshot.draft.facts.weight_lbs is None
+    assert any('weight' in issue.lower() for issue in snapshot.draft.issues)
+
+
+def test_provider_timeout_covers_media_and_image_budgets(tmp_path):
+    host = factory.build_opening_host(tmp_path / 'timeout.sqlite3', dict(BINDINGS),
+        MemoryPolicy(version='test', processing_notice='Invented offline records only'),
+        provider_key='invented-key', bot_token=TOKEN, webhook_secret=SECRET,
+        allowed_host='testserver', global_limit=4, carrier_limit=4)
+    try:
+        assert host.owner.provider._timeout == 90
+    finally:
+        host.owner.close(timeout=5)
+
+
 def test_opening_host_cleanup_on_client_failure(tmp_path, monkeypatch):
     clients = []
     def client(**kwargs):

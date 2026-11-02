@@ -68,6 +68,7 @@ def test_photo_update_selects_largest_size():
     assert isinstance(result, MediaRequest)
     assert (result.file_id, result.file_unique_id, result.mime) == ('large', 'u-large', 'image/jpeg')
     assert (result.update_id, result.message_id, result.carrier) == (50, 7, 'owner')
+    assert result.reported_size == 9000
 
 
 @pytest.mark.parametrize('mime', ['image/png', 'image/jpeg'])
@@ -121,9 +122,10 @@ def test_malformed_ids_rejected(user, chat):
         parse_media_update(data, BINDINGS, consented=True)
 
 
-def test_oversized_reported_file_rejected():
-    oversized = [dict(file_id='a', file_unique_id='u',
-        file_size=intake.MAX_REPORTED_FILE_SIZE + 1)]
+@pytest.mark.parametrize('size', [vision.MAX_IMAGE_BYTES + 1, 10 * 1024 * 1024,
+    20 * 1024 * 1024])
+def test_oversized_reported_file_rejected_before_queue(size):
+    oversized = [dict(file_id='a', file_unique_id='u', file_size=size)]
     with pytest.raises(ValueError):
         parse_media_update(photo_update(photo=oversized), BINDINGS, consented=True)
 

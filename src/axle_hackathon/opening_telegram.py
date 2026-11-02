@@ -156,6 +156,9 @@ class OpeningConversation:
         facts = snapshot.draft.facts.model_dump()
         pricing = snapshot.pricing.model_dump()
         note = snapshot.counter_note
+        issues = list(snapshot.draft.issues)
+        marked_name = None
+        weight_placeholder = False
         field = field.lower()
         if field == 'counter':
             note = value.strip()[:200] or None
@@ -165,6 +168,7 @@ class OpeningConversation:
                        'weight', 'weight_lbs'):
             name = {'loaded': 'loaded_miles', 'deadhead': 'deadhead_miles',
                     'weight': 'weight_lbs'}.get(field, field)
+            marked_name = name
             parsed = _unknown(value)
             if parsed is None:
                 facts[name] = None
@@ -175,6 +179,7 @@ class OpeningConversation:
                                        high=Decimal(bounds[1]), allow_zero=bounds[2])
                 if name == 'weight_lbs' and facts[name] == 0:
                     facts[name] = None
+                    weight_placeholder = True
         elif field in ('target', 'cpm', 'minimum', 'reposition', 'reposition_miles'):
             name = {'target': 'target_all_mile_rpm', 'cpm': 'operating_cpm',
                     'minimum': 'minimum_job_charge',
@@ -201,8 +206,6 @@ class OpeningConversation:
                     pricing['expense_claim'] = 'all_operating_expenses'
             elif parsed is None:
                 pricing[name] = None
-                if name == 'operating_cpm':
-                    pricing['expense_claim'] = None
             else:
                 bounds = {'target_all_mile_rpm': (0, 1000, False),
                           'reposition_miles': (0, 100000, True)}[name]
@@ -211,12 +214,13 @@ class OpeningConversation:
         else:
             raise ValueError('Unknown field; correct payout, loaded, deadhead, weight, target, '
                              'cpm, minimum, reposition or counter')
+        if weight_placeholder and len(issues) < 6 and not any(
+                'weight' in issue.lower() for issue in issues):
+            issues.append('Displayed zero weight is a placeholder requiring clarification.')
         draft = ScreenshotDraft(status='UNCONFIRMED', facts=IntakeFacts.model_validate(facts),
             evidence={**snapshot.draft.evidence,
-                      **({name: 'carrier correction'} if field in (
-                          'payout', 'loaded', 'loaded_miles', 'deadhead',
-                          'deadhead_miles', 'weight', 'weight_lbs') else {})},
-            issues=snapshot.draft.issues)
+                      **({marked_name: 'carrier correction'} if marked_name else {})},
+            issues=issues)
         updated = self.opening.put(user, chat, draft,
             OpeningPricing.model_validate(pricing), expected_revision=snapshot.revision,
             counter_note=note)
@@ -313,8 +317,7 @@ def create_opening_app(inbox, *, webhook_secret: str, allowed_host: str, convers
                         accepted = inbox.submit(user, chat, data['update_id'], 'screenshot',
                             token=token, message_id=message_id, media=dict(
                                 file_id=media.file_id, file_unique_id=media.file_unique_id,
-                                mime=media.mime, reported_size=message.get('photo', [{}])[-1].get('file_size')
-                                if message.get('photo') else message.get('document', {}).get('file_size')))
+                                mime=media.mime, reported_size=media.reported_size))
                     return reply(200, 'queued' if accepted else 'duplicate')
                 finally:
                     flow_slots.release()
@@ -477,7 +480,6 @@ def run_screenshot(inbox, delegator, send, *, user: int, chat: int, update_id: i
                     + render_review(snapshot) + '\n' + QUESTIONS)
             if len(text) > 4000:
                 raise ValueError('Reply too large')
-            flow = inbox._conversation_states.get(carrier)
             nonce = token_urlsafe(12)
             inbox._conversation_states[carrier] = dict(
                 step='review', nonce=nonce, revision=snapshot.revision, token=token,

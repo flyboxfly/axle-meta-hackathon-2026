@@ -53,7 +53,7 @@ def build_opening_host(path, bindings, policy, *, provider_key, bot_token,
         image=MetaImageClient(image_http,provider_key,seconds=40)
         sender=TelegramSender(telegram_http,bot_token,
             allowed_chats={chat for user,chat in bindings},seconds=4)
-        media=TelegramMedia(telegram_http,bot_token,seconds=20)
+        media=TelegramMedia(telegram_http,bot_token,seconds=15)
         def delegator_factory(inbox):
             sessions = OpeningSessions(bindings)
             inbox._opening = sessions
@@ -68,7 +68,7 @@ def build_opening_host(path, bindings, policy, *, provider_key, bot_token,
             delegator_factory=delegator_factory,send=sender,
             webhook_secret=webhook_secret,allowed_host=allowed_host,
             global_limit=global_limit,carrier_limit=carrier_limit,
-            provider_timeout=60,interval=1,transport_clients=clients,
+            provider_timeout=90,interval=1,transport_clients=clients,
             worker_factory=worker_factory,app_factory=app_factory)
         return PilotHost(owner,shutdown_timeout=6)
     except Exception:

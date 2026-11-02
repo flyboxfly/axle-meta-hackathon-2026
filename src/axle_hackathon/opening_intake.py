@@ -27,7 +27,6 @@ Loaded miles must be explicitly distinguished from deadhead/total miles. Do not 
 A displayed zero weight is a placeholder requiring clarification, not a fact. Do not extract carrier names, IDs, addresses, personal details or credentials. Do not claim native Meta/Muse integration.'''
 
 TELEGRAM_HOSTS = frozenset({'api.telegram.org'})
-MAX_REPORTED_FILE_SIZE = 20 * 1024 * 1024
 MAX_IMAGE_REQUEST_BYTES = 8 * 1024 * 1024
 DOWNLOAD_SECONDS = 10
 MAX_RESPONSE_CHARS = 12000
@@ -84,6 +83,7 @@ class MediaRequest(Frozen):
     file_id: str = Field(min_length=1, max_length=256)
     file_unique_id: str = Field(min_length=1, max_length=128)
     mime: str = Field(pattern=r'image/(png|jpeg)')
+    reported_size: int | None = Field(default=None, gt=0)
 
 
 def _binding(bindings, user, chat):
@@ -145,11 +145,14 @@ def parse_media_update(data, bindings, *, consented) -> MediaRequest:
     if (not isinstance(file_id, str) or not 1 <= len(file_id) <= 256
             or not isinstance(unique, str) or not 1 <= len(unique) <= 128):
         raise ValueError('Invalid file reference')
+    # Telegram allows files up to 20 MB; this pipeline processes at most 4 MiB.
+    # Oversized files are rejected here, before queueing or budget reservation.
     if reported is not None and (
-            type(reported) is not int or not 1 <= reported <= MAX_REPORTED_FILE_SIZE):
+            type(reported) is not int or not 1 <= reported <= MAX_IMAGE_BYTES):
         raise ValueError('Reported file size exceeds limit')
     return MediaRequest(update_id=update_id, carrier=carrier, user=user, chat=chat,
-        message_id=message_id, file_id=file_id, file_unique_id=unique, mime=mime)
+        message_id=message_id, file_id=file_id, file_unique_id=unique, mime=mime,
+        reported_size=reported)
 
 
 def validate_file_path(path: str) -> str:
