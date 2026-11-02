@@ -7,12 +7,20 @@ import re
 import secrets
 import stat
 import sys
+import warnings
 
 from .pilot_http import create_http_client
 from .pilot_launch import configure_private_logging, read_private_config
 from .pilot_transports import _json_post
 
 FAILURE='Setup stopped; remote changes may be uncertain. Inspect privately before retry.'
+
+
+def private_prompt(prompt):
+    # getpass otherwise falls back to echoing input if terminal control fails.
+    with warnings.catch_warnings():
+        warnings.simplefilter('error',getpass.GetPassWarning)
+        return getpass.getpass(prompt)
 
 
 class BotOperator:
@@ -101,6 +109,7 @@ def validate_values(data):
 
 def config_destination(path):
     path=Path(path)
+    if path.name.startswith('pilot.sqlite3'):raise ValueError('Reserved storage path')
     parent=path.parent.stat()
     if (not path.is_absolute() or not stat.S_ISDIR(parent.st_mode)
             or parent.st_uid!=os.getuid() or stat.S_IMODE(parent.st_mode)!=0o700):
@@ -131,23 +140,23 @@ def main():
         path=os.environ.get('AXLE_PILOT_CONFIG_FILE','')
         if action=='prepare':
             # All private values use non-echoing terminal input; no secret arguments.
-            if getpass.getpass('After owner approval, type PREPARE NEW OWNER TEST: ')!='PREPARE NEW OWNER TEST':
+            if private_prompt('After owner approval, type PREPARE NEW OWNER TEST: ')!='PREPARE NEW OWNER TEST':
                 raise ValueError()
-            token=getpass.getpass('Dedicated bot token: ')
-            expected=getpass.getpass('Expected dedicated bot username (without @): ')
+            token=private_prompt('Dedicated bot token: ')
+            expected=private_prompt('Expected dedicated bot username (without @): ')
             data=dict(approved_synthetic_owner_test=True,bot_token=token,
-                provider_key=getpass.getpass('Provider key: '),
+                provider_key=private_prompt('Provider key: '),
                 webhook_secret=secrets.token_urlsafe(32),
-                allowed_host=getpass.getpass('Generated tunnel hostname: '),
-                user_id=int(getpass.getpass('Approved owner user ID: ')),
-                chat_id=int(getpass.getpass('Approved private chat ID: ')))
-            phrase=getpass.getpass('Unique enrollment phrase already sent in owner chat: ')
+                allowed_host=private_prompt('Generated tunnel hostname: '),
+                user_id=int(private_prompt('Approved owner user ID: ')),
+                chat_id=int(private_prompt('Approved private chat ID: ')))
+            phrase=private_prompt('Unique enrollment phrase already sent in owner chat: ')
             if not 16<=len(phrase)<=128 or not expected:raise ValueError()
             validate_values(data)
             config_destination(path)
         else:
             data,_=read_private_config(path);validate_values(data);token=data['bot_token']
-            if action!='check' and getpass.getpass('After owner approval, type '+action.upper()+': ')!=action.upper():
+            if action!='check' and private_prompt('After owner approval, type '+action.upper()+': ')!=action.upper():
                 raise ValueError()
         with create_http_client(connect=2,read=3,write=2,pool=1,connections=1) as client:
             bot=BotOperator(client,token)

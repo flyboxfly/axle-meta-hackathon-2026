@@ -131,3 +131,24 @@ def test_cli_refuses_nonterminal_without_network(monkeypatch,capsys):
     monkeypatch.setattr(setup,'create_http_client',lambda **kwargs:pytest.fail('Network forbidden'))
     assert setup.main()==1
     assert capsys.readouterr().err.strip()==FAILURE
+
+
+@pytest.mark.parametrize('name',['pilot.sqlite3','pilot.sqlite3.owner','pilot.sqlite3-journal'])
+def test_config_cannot_occupy_runtime_storage_paths(tmp_path,name):
+    tmp_path.chmod(0o700)
+    with pytest.raises(ValueError,match='Reserved storage path'):
+        write_config(tmp_path/name,values())
+    assert list(tmp_path.iterdir())==[]
+
+
+def test_secret_prompt_aborts_before_getpass_echo_fallback(monkeypatch):
+    import warnings
+    import axle_hackathon.pilot_setup as setup
+    echoed=[]
+    def fallback(prompt):
+        warnings.warn('Cannot control echo',setup.getpass.GetPassWarning)
+        echoed.append(True)
+        return 'secret'
+    monkeypatch.setattr(setup.getpass,'getpass',fallback)
+    with pytest.raises(setup.getpass.GetPassWarning):setup.private_prompt('Secret: ')
+    assert not echoed
