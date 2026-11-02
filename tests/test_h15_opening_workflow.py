@@ -15,9 +15,11 @@ import axle_hackathon.pilot_launch as launch
 from axle_hackathon.opening_meta import OpeningDelegator
 from axle_hackathon.opening_telegram import OpeningConversation, create_opening_app
 from axle_hackathon.opening_workflow import OpeningSessions
+from axle_hackathon.pilot_execution import BoundedDelegator
 from axle_hackathon.pilot_inbox import PilotInbox
 from axle_hackathon.pilot_memory import MemoryPolicy
 from axle_hackathon.pilot_runtime import OpeningWorker
+from axle_hackathon.pilot_transports import MetaImageClient, MetaResponsesClient, TelegramMedia
 from test_h13_memory import Clock
 from test_h13_telegram import SECRET
 from test_h13_transports import TOKEN, response
@@ -505,6 +507,394 @@ def test_carrier_zero_weight_marks_placeholder_clarification(store):
     snapshot = store._opening.get(1, 1)
     assert snapshot.draft.facts.weight_lbs is None
     assert any('weight' in issue.lower() for issue in snapshot.draft.issues)
+
+
+def mock_stack(store, handler, send=None, **limits):
+    client = httpx.Client(transport=httpx.MockTransport(handler))
+    image = MetaImageClient(client, 'invented-key', seconds=5)
+    text = MetaResponsesClient(client, 'invented-key', seconds=5)
+    media = TelegramMedia(client, TOKEN, seconds=5)
+    inner = OpeningDelegator(store, store._opening, image, text, media=media)
+    worker = OpeningWorker(store, inner, send or (lambda *_: True),
+        global_limit=limits.get('global_limit', 4), carrier_limit=limits.get('carrier_limit', 4))
+    return worker, client
+
+
+def stage_handler(meta_calls, *, getfile=None, download=None, model=None):
+    raw = jpeg_bytes()
+    def handle(request):
+        if request.url.host == 'api.meta.ai':
+            meta_calls.append(1)
+            if isinstance(model, Exception):
+                raise model
+            return model(request)
+        path = request.url.path
+        if path.endswith('/getFile'):
+            if isinstance(getfile, Exception):
+                raise getfile
+            if getfile is not None:
+                return getfile
+            return response(200, json_value={'ok': True, 'result': {
+                'file_id': 'file-1', 'file_path': 'photos/f1.jpg', 'file_size': len(raw)}})
+        if '/file/' in path:
+            if isinstance(download, Exception):
+                raise download
+            return download if download is not None else response(200, content=raw)
+        raise AssertionError('unexpected request ' + str(request.url))
+    return handle
+
+
+def submit_jpeg(store, token, update=50, message=50):
+    return store.submit(1, 1, update, 'screenshot', token=token, message_id=message,
+        media=dict(file_id='file-1', file_unique_id='unique-1', mime='image/jpeg',
+                   reported_size=len(jpeg_bytes())))
+
+
+def test_getfile_rejection_is_uncertain_without_model_call(store):
+    access = session(store)
+    meta, sends = [], []
+    bad = response(200, json_value={'ok': False, 'result': {}})
+    worker, client = mock_stack(store, stage_handler(meta, getfile=bad),
+                                send=lambda c, t: sends.append(t) or True)
+    try:
+        submit_jpeg(store, access.token)
+        assert worker.tick() == 'uncertain'
+        assert worker.tick() == 'idle'
+        assert meta == [] and sends == []
+        assert store._db.execute('SELECT SUM(attempts) FROM pilot_budget').fetchone() == (1,)
+    finally:
+        client.close()
+
+
+@pytest.mark.parametrize('result', [
+    dict(file_id='file-1', file_path='photos/f1.jpg', file_size=5 * 1024 * 1024),
+    dict(file_id='file-1', file_path='../escape.jpg', file_size=100),
+    dict(file_id='other', file_path='photos/f1.jpg', file_size=100),
+])
+def test_bad_getfile_result_is_uncertain_without_model_call(store, result):
+    access = session(store)
+    meta = []
+    answered = response(200, json_value={'ok': True, 'result': result})
+    worker, client = mock_stack(store, stage_handler(meta, getfile=answered))
+    try:
+        submit_jpeg(store, access.token)
+        assert worker.tick() == 'uncertain'
+        assert meta == []
+    finally:
+        client.close()
+
+
+@pytest.mark.parametrize('status', [302, 404, 500])
+def test_download_failure_is_uncertain_without_model_call(store, status):
+    access = session(store)
+    meta = []
+    worker, client = mock_stack(store, stage_handler(meta, download=response(status)))
+    try:
+        submit_jpeg(store, access.token)
+        assert worker.tick() == 'uncertain'
+        assert meta == []
+    finally:
+        client.close()
+
+
+@pytest.mark.parametrize('status', [401, 403, 429, 500])
+def test_model_rejection_is_uncertain_with_attempt_reserved(store, status):
+    access = session(store)
+    meta, sends = [], []
+    worker, client = mock_stack(store, stage_handler(meta, model=lambda request: response(status)),
+                                send=lambda c, t: sends.append(t) or True)
+    try:
+        submit_jpeg(store, access.token)
+        assert worker.tick() == 'uncertain'
+        assert worker.tick() == 'idle'
+        # One attempt was made and reserved; its server-side outcome is unknown.
+        assert len(meta) == 1 and sends == []
+        assert store._db.execute('SELECT SUM(attempts) FROM pilot_budget').fetchone() == (1,)
+        with pytest.raises(KeyError):
+            store._opening.get(1, 1)
+    finally:
+        client.close()
+
+
+def test_model_timeout_is_uncertain_with_attempt_reserved(store):
+    access = session(store)
+    meta = []
+    worker, client = mock_stack(
+        store, stage_handler(meta, model=httpx.ReadTimeout('invented timeout')))
+    try:
+        submit_jpeg(store, access.token)
+        assert worker.tick() == 'uncertain'
+        assert len(meta) == 1
+        assert store._db.execute('SELECT SUM(attempts) FROM pilot_budget').fetchone() == (1,)
+    finally:
+        client.close()
+
+
+def test_bounded_timeout_is_uncertain_without_proven_model_call(store):
+    import time
+    access = session(store)
+    meta = []
+    def slow(request):
+        meta.append(1)
+        time.sleep(0.3)
+        return response(200, json_value={'status': 'completed', 'output': [],
+            'output_text': draft_text(), 'id': 'late', 'usage': None})
+    worker, client = mock_stack(store, stage_handler([], model=slow))
+    bounded = BoundedDelegator(worker.delegator, timeout=0.05)
+    worker.delegator = bounded
+    try:
+        submit_jpeg(store, access.token)
+        assert worker.tick() == 'uncertain'
+        assert store._db.execute('SELECT SUM(attempts) FROM pilot_budget').fetchone() == (1,)
+    finally:
+        bounded.close()
+        client.close()
+
+
+def test_invalid_extraction_payload_is_uncertain(store):
+    access = session(store)
+    meta = []
+    failed = lambda request: response(200, json_value={'status': 'failed', 'output': []})
+    worker, client = mock_stack(store, stage_handler(meta, model=failed))
+    try:
+        submit_jpeg(store, access.token)
+        assert worker.tick() == 'uncertain'
+        assert len(meta) == 1
+        with pytest.raises(KeyError):
+            store._opening.get(1, 1)
+    finally:
+        client.close()
+
+
+def test_oversize_dimensions_rejected_without_model_call(store):
+    access = session(store)
+    meta = []
+    buffer = io.BytesIO()
+    Image.new('RGB', (4100, 10), 'blue').save(buffer, format='JPEG')
+    wide = buffer.getvalue()
+    worker, client = mock_stack(store, stage_handler(
+        meta, download=response(200, content=wide),
+        getfile=response(200, json_value={'ok': True, 'result': {
+            'file_id': 'file-1', 'file_path': 'photos/wide.jpg', 'file_size': len(wide)}})))
+    try:
+        store.submit(1, 1, 50, 'screenshot', token=access.token, message_id=50,
+            media=dict(file_id='file-1', file_unique_id='unique-1', mime='image/jpeg',
+                       reported_size=len(wide)))
+        assert worker.tick() == 'uncertain'
+        assert meta == []
+    finally:
+        client.close()
+
+
+def rest_extraction(text, *, status='completed', reason=None, usage=None):
+    body = dict(id='resp-rest-1', object='response', status=status,
+        output=[
+            dict(type='reasoning', id='rs-1', summary=[], status='completed'),
+            dict(type='message', id='msg-1', role='assistant', status='completed',
+                 content=[dict(type='output_text', text=text, annotations=[])])],
+        usage=usage if usage is not None else dict(
+            input_tokens=1200, input_tokens_details=dict(cached_tokens=0),
+            output_tokens=1000, output_tokens_details=dict(reasoning_tokens=700),
+            total_tokens=2200))
+    if reason is not None:
+        body['incomplete_details'] = dict(reason=reason)
+    return response(200, json_value=body)
+
+
+def test_rest_shaped_extraction_succeeds_without_sdk_helper(store):
+    access = session(store)
+    meta = []
+    worker, client = mock_stack(store, stage_handler(
+        meta, model=lambda request: rest_extraction(draft_text(
+            payout=('420', 'Total payout $420'), loaded_miles=('180', 'Loaded 180 mi')))))
+    try:
+        submit_jpeg(store, access.token)
+        assert worker.tick() == 'completed'
+        assert len(meta) == 1
+        assert str(store._opening.get(1, 1).draft.facts.payout) == '420'
+    finally:
+        client.close()
+
+
+def test_refusal_only_extraction_fails_closed(store):
+    access = session(store)
+    meta = []
+    refused = response(200, json_value=dict(
+        id='resp-rest-2', object='response', status='completed',
+        output=[dict(type='message', id='msg-2', role='assistant', status='completed',
+                     content=[dict(type='refusal', refusal='invented refusal')])]))
+    worker, client = mock_stack(store, stage_handler(meta, model=lambda request: refused))
+    try:
+        submit_jpeg(store, access.token)
+        assert worker.tick() == 'uncertain'
+        with pytest.raises(KeyError):
+            store._opening.get(1, 1)
+    finally:
+        client.close()
+
+
+@pytest.mark.parametrize('output, top', [
+    ([dict(type='message', content='not-a-list')], None),
+    ([dict(type='message', content=[dict(type='output_text', text=123)])], None),
+    ([dict(type='message', content=[dict(type='output_text', text='x' * 12001)])], None),
+    ([], 123),
+])
+def test_malformed_rest_text_rejected(store, output, top):
+    access = session(store)
+    meta = []
+    body = dict(id='resp-rest-3', object='response', status='completed', output=output)
+    if top is not None:
+        body['output_text'] = top
+    worker, client = mock_stack(
+        store, stage_handler(meta, model=lambda request: response(200, json_value=body)))
+    try:
+        submit_jpeg(store, access.token)
+        assert worker.tick() == 'uncertain'
+        assert len(meta) == 1
+    finally:
+        client.close()
+
+
+def test_incomplete_status_dominates_valid_text(store):
+    access = session(store)
+    meta = []
+    body = dict(id='resp-rest-4', object='response', status='incomplete',
+        incomplete_details=dict(reason='content_filter'),
+        output=[dict(type='message', id='msg-4', role='assistant', status='completed',
+                     content=[dict(type='output_text', text=draft_text(), annotations=[])])])
+    worker, client = mock_stack(
+        store, stage_handler(meta, model=lambda request: response(200, json_value=body)))
+    try:
+        submit_jpeg(store, access.token)
+        assert worker.tick() == 'uncertain'
+        with pytest.raises(KeyError):
+            store._opening.get(1, 1)
+    finally:
+        client.close()
+
+
+def test_refusal_with_top_level_text_rejected(store):
+    access = session(store)
+    meta = []
+    body = dict(id='resp-rest-5', object='response', status='completed',
+        output_text=draft_text(),
+        output=[dict(type='message', id='msg-5', role='assistant', status='completed',
+                     content=[dict(type='refusal', refusal='invented refusal')])])
+    worker, client = mock_stack(
+        store, stage_handler(meta, model=lambda request: response(200, json_value=body)))
+    try:
+        submit_jpeg(store, access.token)
+        assert worker.tick() == 'uncertain'
+        with pytest.raises(KeyError):
+            store._opening.get(1, 1)
+    finally:
+        client.close()
+
+
+def test_non_assistant_message_rejected(store):
+    access = session(store)
+    meta = []
+    body = dict(id='resp-rest-6', object='response', status='completed',
+        output=[dict(type='message', id='msg-6', role='user', status='completed',
+                     content=[dict(type='output_text', text=draft_text(), annotations=[])])])
+    worker, client = mock_stack(
+        store, stage_handler(meta, model=lambda request: response(200, json_value=body)))
+    try:
+        submit_jpeg(store, access.token)
+        assert worker.tick() == 'uncertain'
+        with pytest.raises(KeyError):
+            store._opening.get(1, 1)
+    finally:
+        client.close()
+
+
+def test_truncated_live_shape_reproduces_uncertain_no_draft(store):
+    access = session(store)
+    meta = []
+    partial = '{"status":"UNCONFIRMED","facts":{"payout":'
+    worker, client = mock_stack(store, stage_handler(meta, model=lambda request: rest_extraction(
+        partial, status='incomplete', reason='max_output_tokens',
+        usage=dict(input_tokens=1200, input_tokens_details=dict(cached_tokens=0),
+                   output_tokens=4096, output_tokens_details=dict(reasoning_tokens=3500),
+                   total_tokens=5296))))
+    try:
+        submit_jpeg(store, access.token)
+        assert worker.tick() == 'uncertain'
+        assert worker.tick() == 'idle'
+        assert len(meta) == 1
+        assert store._db.execute('SELECT SUM(attempts) FROM pilot_budget').fetchone() == (1,)
+        with pytest.raises(KeyError):
+            store._opening.get(1, 1)
+    finally:
+        client.close()
+
+
+def test_reasoning_tokens_recorded_in_trace(store):
+    access = session(store)
+    inner = delegator(store, [], image_text=draft_text())
+    outcome = inner.extract(1, 1, access.token, 'file-1', 'image/png', expected_revision=0)
+    assert outcome['trace']['usage'] == {'input_tokens': 10, 'output_tokens': 5}
+    inner = delegator(store, [], image_text=draft_text())
+    real = inner._image.responses.create
+    def detailed(**payload):
+        answered = real(**payload)
+        answered.usage = dict(input_tokens=1200, output_tokens=1000,
+            output_tokens_details=dict(reasoning_tokens=700), total_tokens=2200)
+        return answered
+    inner._image.responses.create = detailed
+    outcome = inner.extract(1, 1, access.token, 'file-1', 'image/png', expected_revision=1)
+    assert outcome['trace']['usage'] == {'input_tokens': 1200, 'output_tokens': 1000,
+        'total_tokens': 2200, 'reasoning_tokens': 700}
+
+
+def test_refresh_surfaces_failed_screenshot_once(store):
+    conversation = OpeningConversation(store)
+    conversation.handle(1, 1, '/start')
+    nonce = store._conversation_states['owner']['nonce']
+    conversation.handle(1, 1, f'/reply {nonce} session')
+    token = store._active['owner'].token
+    calls = []
+    inner = delegator(store, calls, image_text=draft_text())
+    inner._media = NS(fetch=lambda *args: (_ for _ in ()).throw(ValueError('Reported file size exceeds limit')))
+    worker = OpeningWorker(store, inner, lambda *_: True, global_limit=4, carrier_limit=4)
+    submit_shot(store, token)
+    assert worker.tick() == 'uncertain'
+    assert 'not processed' in conversation.handle(1, 1, '/refresh')
+    assert 'not processed' not in conversation.handle(1, 1, '/refresh')
+
+
+def test_failure_hint_lifecycle_over_webhook(store):
+    sent = []
+    app = create_opening_app(store, webhook_secret=SECRET, allowed_host='testserver',
+        conversation=OpeningConversation(store), send=lambda c, t: sent.append(t) or True)
+    inner = delegator(store, [], image_text=draft_text())
+    inner._media = NS(fetch=lambda *args: (_ for _ in ()).throw(ValueError('Reported file size exceeds limit')))
+    worker = OpeningWorker(store, inner, lambda *_: True, global_limit=4, carrier_limit=4)
+    with TestClient(app) as client:
+        headers = {'X-Telegram-Bot-Api-Secret-Token': SECRET}
+        def post(payload):
+            posted = client.post('/telegram/webhook', json=payload, headers=headers)
+            assert posted.status_code == 200
+            return posted.json()['status']
+        def command(text, update_id):
+            return post(dict(update_id=update_id, message=dict(
+                message_id=update_id, **{'from': dict(id=1, is_bot=False)},
+                chat=dict(id=1, type='private'), text=text)))
+        def photo(update_id):
+            return post(dict(update_id=update_id, message=dict(
+                message_id=update_id, **{'from': dict(id=1, is_bot=False)},
+                chat=dict(id=1, type='private'),
+                photo=[dict(file_id='file-1', file_unique_id='unique-1', file_size=100)])))
+        assert command('/start', 1) == 'processed'
+        nonce = sent[-1].split('\nStep: ')[1].split('\n')[0]
+        assert command(f'/reply {nonce} session', 2) == 'processed'
+        assert photo(3) == 'queued'
+        assert worker.tick() == 'uncertain'
+        assert command('/refresh', 4) == 'processed'
+        assert 'not processed' in sent[-1]
+        assert photo(5) == 'queued'
+        assert command('/refresh', 6) == 'processed'
+        assert 'not processed' not in sent[-1]
 
 
 def test_provider_timeout_covers_media_and_image_budgets(tmp_path):

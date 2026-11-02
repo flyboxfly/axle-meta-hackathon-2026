@@ -30,8 +30,12 @@ TOOL = dict(type='function', name='review_confirmed_opening',
 def _metadata(response, started, *, role, tool, revision):
     usage = getattr(response, 'usage', None)
     if isinstance(usage, dict):
-        usage = {key: usage[key] for key in ('input_tokens', 'output_tokens', 'total_tokens')
-                 if type(usage.get(key)) is int} or None
+        flat = {key: usage[key] for key in ('input_tokens', 'output_tokens', 'total_tokens')
+                if type(usage.get(key)) is int}
+        details = usage.get('output_tokens_details')
+        if isinstance(details, dict) and type(details.get('reasoning_tokens')) is int:
+            flat['reasoning_tokens'] = details['reasoning_tokens']
+        usage = flat or None
     else:
         usage = None
     response_id = getattr(response, 'id', None)

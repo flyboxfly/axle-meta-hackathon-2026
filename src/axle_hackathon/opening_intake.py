@@ -208,6 +208,8 @@ def build_extraction_request(normalized: bytes, mime: str) -> dict:
              'text': 'Extract visible unconfirmed facts into the requested JSON schema. '
                      'Use null for missing facts and empty strings for missing evidence.'},
             {'type': 'input_image', 'image_url': image_url},
+        # Reasoning tokens share max_output_tokens with visible output. The
+        # original cap is retained pending evidence that it is insufficient.
         ]}], max_output_tokens=4096, reasoning={'effort': 'low'},
         text={'format': {'type': 'json_schema', 'name': 'opening_screenshot_draft',
                          'strict': True, 'schema': extraction_schema()}})
@@ -219,6 +221,8 @@ def build_extraction_request(normalized: bytes, mime: str) -> dict:
 def parse_extraction_response(response) -> ScreenshotDraft:
     """Validate one completed Wonder extraction; incomplete results fail closed."""
     if getattr(response, 'status', None) != 'completed':
+        if getattr(response, 'incomplete_reason', None) == 'max_output_tokens':
+            raise RuntimeError('Screenshot response truncated; output budget exhausted')
         raise RuntimeError('Screenshot response incomplete or empty')
     text = getattr(response, 'output_text', None)
     if not isinstance(text, str) or not text.strip():

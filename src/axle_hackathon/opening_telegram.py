@@ -126,6 +126,11 @@ class OpeningConversation:
             try:
                 snapshot = self.opening.get(user, chat)
             except KeyError:
+                if flow.pop('screenshot_notice', False):
+                    return self._prompt(carrier, flow['last_prompt'] +
+                        '\nLast screenshot was not processed; no draft was created and '
+                        'nothing was sent. Send a new PNG or JPEG screenshot, or /forget.',
+                        save=False)
                 return self._prompt(carrier, flow['last_prompt'])
             flow['revision'] = snapshot.revision
             flow['step'] = 'review'
@@ -233,8 +238,9 @@ class OpeningConversation:
         self._flows[carrier].update(step=step, nonce=token_urlsafe(12))
         return self._prompt(carrier, prompt)
 
-    def _prompt(self, carrier, prompt):
-        self._flows[carrier]['last_prompt'] = prompt
+    def _prompt(self, carrier, prompt, *, save=True):
+        if save:
+            self._flows[carrier]['last_prompt'] = prompt
         return prompt + '\nStep: ' + self._flows[carrier]['nonce'] + '\nReply format: /reply STEP answer'
 
 
@@ -318,6 +324,8 @@ def create_opening_app(inbox, *, webhook_secret: str, allowed_host: str, convers
                             token=token, message_id=message_id, media=dict(
                                 file_id=media.file_id, file_unique_id=media.file_unique_id,
                                 mime=media.mime, reported_size=media.reported_size))
+                        if accepted and flow is not None:
+                            flow.pop('screenshot_notice', None)
                     return reply(200, 'queued' if accepted else 'duplicate')
                 finally:
                     flow_slots.release()
@@ -499,6 +507,14 @@ def run_screenshot(inbox, delegator, send, *, user: int, chat: int, update_id: i
     except Exception:
         try:
             inbox.finish(user, chat, update_id, claim, success=False)
+        except Exception:
+            pass
+        try:
+            # Best-effort recovery hint for /refresh; durable state is recorded above.
+            # Fixed text only: no provider detail, pixels or secrets.
+            flow = inbox._conversation_states.get(carrier)
+            if flow is not None:
+                flow['screenshot_notice'] = True
         except Exception:
             pass
         raise RuntimeError('Worker failed; outcome uncertain; no automatic retry') from None

@@ -68,8 +68,20 @@ A timeout never authorizes a retry.
   Sources: https://dev.meta.ai/docs/image-understanding,
   https://dev.meta.ai/docs/structured-output,
   https://dev.meta.ai/docs/tool-calling
+- REST response shape: visible text comes from `output[]` message
+  `output_text` parts; top-level `output_text` is an SDK-only helper and
+  must not be read over direct HTTP. Reasoning effort `low` is valid;
+  reasoning tokens share `max_output_tokens` with visible output. The
+  extraction cap stays at the original 4096 pending evidence that it is
+  insufficient. Sources:
+  https://dev.meta.ai/docs/api-reference/responses/schemas,
+  https://dev.meta.ai/docs/reasoning
 - Account-specific Wonder access, latency and billing behavior remain
-  untested; the first approved extraction tests them.
+  untested; the first approved extraction tests them. If an extraction
+  fails, dashboard output tokens near the 4096 cap only suggest
+  truncation; daily totals alone do not prove it. Likewise, a small
+  reported file size makes media failure less likely but does not rule
+  out download, format, or dimension faults.
 
 ## Staged procedure after explicit authorization
 

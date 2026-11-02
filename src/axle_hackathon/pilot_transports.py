@@ -4,7 +4,7 @@ import re
 from time import monotonic
 from types import SimpleNamespace
 from .opening_intake import (
-    MAX_IMAGE_REQUEST_BYTES, TELEGRAM_HOSTS, validate_file_path,
+    MAX_IMAGE_REQUEST_BYTES, MAX_RESPONSE_CHARS, TELEGRAM_HOSTS, validate_file_path,
 )
 from .pilot_execution import _seconds
 from .vision import MAX_IMAGE_BYTES
@@ -77,6 +77,53 @@ class MetaResponsesClient:
         except Exception:raise RuntimeError('Invalid provider response') from None
 
 
+def _response_text(data):
+    """Strict visible text from REST output items; top-level helper is SDK-only.
+
+    Message parts are authoritative when present: refusal fails, and the
+    top-level fallback applies only when no message item exists, so it can
+    never override refusal, status, or malformed-shape handling. Response
+    status is always checked separately by the caller.
+    """
+    parts, total, saw_message = [], 0, False
+    output = data.get('output', [])
+    if not isinstance(output, list) or len(output) > 32:
+        raise ValueError()
+    for item in output:
+        if not isinstance(item, dict):
+            raise ValueError()
+        if item.get('type') != 'message':
+            continue
+        if item.get('role') != 'assistant':
+            raise ValueError()
+        saw_message = True
+        content = item.get('content')
+        if not isinstance(content, list) or len(content) > 32:
+            raise ValueError()
+        for part in content:
+            if not isinstance(part, dict):
+                raise ValueError()
+            if part.get('type') == 'refusal':
+                raise ValueError()
+            if part.get('type') != 'output_text':
+                continue
+            text = part.get('text')
+            if not isinstance(text, str):
+                raise ValueError()
+            total += len(text)
+            if total > MAX_RESPONSE_CHARS:
+                raise ValueError()
+            parts.append(text)
+    if parts or saw_message:
+        return ''.join(parts)
+    top = data.get('output_text')
+    if top is None:
+        return ''
+    if not isinstance(top, str) or len(top) > MAX_RESPONSE_CHARS:
+        raise ValueError()
+    return top
+
+
 class MetaImageClient:
     """Image-capable Responses interface; separate reviewed request bound."""
     def __init__(self,client,key,*,seconds):
@@ -91,7 +138,11 @@ class MetaImageClient:
         data=_json_post(self._client,'https://api.meta.ai/v1/responses',payload,
             {'Authorization':'Bearer '+self._key},seconds=self._seconds,limit=65536)
         try:
-            namespace=SimpleNamespace(status=data['status'],output_text=data.get('output_text',''),
+            text = _response_text(data)
+            details = data.get('incomplete_details')
+            reason = details.get('reason') if isinstance(details, dict) else None
+            namespace=SimpleNamespace(status=data['status'],output_text=text,
+                incomplete_reason=reason if reason in ('max_output_tokens','content_filter') else None,
                 id=data.get('id'),usage=data.get('usage'))
             namespace.output=[SimpleNamespace(**item) for item in data.get('output',[])]
             return namespace

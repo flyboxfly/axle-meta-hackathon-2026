@@ -193,6 +193,28 @@ def test_build_request_uses_wonder_and_bounds_payload(monkeypatch):
         build_extraction_request(image_bytes('PNG'), 'image/png')
 
 
+def test_extraction_budget_retained_pending_evidence():
+    # Reasoning tokens share max_output_tokens, but no evidence shows the
+    # original cap insufficient, so it stays unchanged.
+    payload = build_extraction_request(image_bytes('PNG'), 'image/png')
+    assert payload['max_output_tokens'] == 4096
+    assert payload['reasoning'] == {'effort': 'low'}
+
+
+def test_truncated_extraction_reports_budget_exhaustion():
+    truncated = NS(status='incomplete', incomplete_reason='max_output_tokens',
+                   output_text='{"status":')
+    with pytest.raises(RuntimeError, match='truncated'):
+        parse_extraction_response(truncated)
+
+
+@pytest.mark.parametrize('reason', [None, 'content_filter', 'unexpected-value'])
+def test_nontruncated_incomplete_stays_generic(reason):
+    pending = NS(status='incomplete', incomplete_reason=reason, output_text='partial')
+    with pytest.raises(RuntimeError, match='^Screenshot response incomplete or empty$'):
+        parse_extraction_response(pending)
+
+
 def test_image_payload_needs_separate_transport_bound():
     raw = normalize_screenshot(noise_bytes(), 'image/png')[0]
     payload = build_extraction_request(raw, 'image/png')
