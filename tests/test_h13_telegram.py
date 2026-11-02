@@ -119,3 +119,85 @@ def test_privacy_ack_does_not_use_conversation_admission(inbox):
         assert len(sent)==1 and not s._active
     finally:
         s._flow_slots.release();s._flow_slots.release()
+
+
+@pytest.mark.parametrize('change',['new_consent','new_forget'])
+def test_privacy_ack_dispatch_rechecks_supersession(inbox,monkeypatch,change):
+    s,_,_=inbox;ready(s);sent=[]
+    app=create_app(s,webhook_secret=SECRET,allowed_host='testserver',
+                   send=lambda chat,text:sent.append(text) or True)
+    original=s._delivery_pool.send
+    def delay(chat,text,guard,sender):
+        if change=='new_consent':
+            s.process_forget(1,1,101)
+            consent(s)
+        else:s.submit(1,1,102,'forget',command_id=102,message_id=102)
+        return original(chat,text,guard,sender)
+    monkeypatch.setattr(s._delivery_pool,'send',delay)
+    with TestClient(app) as c:
+        r=c.post('/telegram/webhook',json=update('/forget',id=101),
+                 headers={'X-Telegram-Bot-Api-Secret-Token':SECRET})
+        assert r.status_code==200 and sent==[]
+
+
+def test_sender_saturation_cannot_block_privacy_submission(inbox):
+    s,_,_=inbox;a=ready(s);sent=[]
+    app=create_app(s,webhook_secret=SECRET,allowed_host='testserver',
+                   send=lambda chat,text:sent.append(text) or True)
+    pool=s._delivery_pool
+    assert pool._slots.acquire(False) and pool._slots.acquire(False)
+    try:
+        with TestClient(app) as c:
+            r=c.post('/telegram/webhook',json=update('/forget',id=101),
+                     headers={'X-Telegram-Bot-Api-Secret-Token':SECRET})
+            assert r.status_code==200 and sent==[]
+            with pytest.raises(PermissionError):s.get(1,1,a.token)
+            s.process_forget(1,1,101)
+            assert s._db.execute('SELECT status FROM pilot_privacy').fetchone()==('completed',)
+    finally:pool._slots.release();pool._slots.release()
+
+
+def test_privacy_ack_timeout_retains_actual_sender_until_exit(inbox):
+    from threading import Event
+    s,_,_=inbox;ready(s);entered=Event();release=Event();exited=Event()
+    def send(chat,text):
+        entered.set()
+        try:assert release.wait(2);return True
+        finally:exited.set()
+    app=create_app(s,webhook_secret=SECRET,allowed_host='testserver',send=send)
+    pool=s._delivery_pool;pool._timeout=0.01
+    try:
+        with TestClient(app) as c:
+            payload=update('/forget',id=101);headers={'X-Telegram-Bot-Api-Secret-Token':SECRET}
+            assert c.post('/telegram/webhook',json=payload,headers=headers).status_code==200
+            assert entered.is_set() and not pool.drained
+            s.process_forget(1,1,101)
+            assert c.post('/telegram/webhook',json=payload,headers=headers).json()['status']=='duplicate'
+            assert s._db.execute('SELECT status FROM pilot_privacy').fetchone()==('completed',)
+    finally:
+        release.set();assert exited.wait(2)
+
+
+def test_cancelled_privacy_ack_preserves_durable_withdrawal(inbox,monkeypatch):
+    import asyncio
+    import httpx
+    import axle_hackathon.pilot_telegram as telegram
+    s,_,_=inbox;a=ready(s)
+    async def exercise():
+        entered=asyncio.Event()
+        async def blocked(*args):
+            entered.set();await asyncio.Event().wait()
+        monkeypatch.setattr(telegram.asyncio,'to_thread',blocked)
+        app=create_app(s,webhook_secret=SECRET,allowed_host='testserver',send=lambda *_:True)
+        async with httpx.AsyncClient(transport=httpx.ASGITransport(app=app),base_url='http://testserver') as c:
+            payload=update('/forget',id=101);headers={'X-Telegram-Bot-Api-Secret-Token':SECRET}
+            task=asyncio.create_task(c.post('/telegram/webhook',json=payload,headers=headers))
+            await asyncio.wait_for(entered.wait(),1)
+            task.cancel()
+            with pytest.raises(asyncio.CancelledError):await task
+            with pytest.raises(PermissionError):s.get(1,1,a.token)
+            assert (await c.post('/telegram/webhook',json=payload,headers=headers)).json()['status']=='duplicate'
+            s.process_forget(1,1,101)
+            assert s._db.execute('SELECT status FROM pilot_privacy').fetchone()==('completed',)
+        s._delivery_pool.close()
+    asyncio.run(exercise())
