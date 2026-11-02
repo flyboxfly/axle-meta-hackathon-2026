@@ -140,6 +140,22 @@ def create_app(inbox, *, webhook_secret: str, allowed_host: str, conversation=No
                                             message_id=message_id)
                     if conversation is not None:
                         conversation.clear(user,chat)
+            if action == 'forget' and accepted and send is not None:
+                def privacy_guard():
+                    with inbox._lock:
+                        row=inbox._db.execute('SELECT update_id FROM pilot_privacy '
+                            'WHERE carrier=? AND user_id=? AND chat_id=?',
+                            (carrier,user,chat)).fetchone()
+                        if row != (data['update_id'],) or carrier in inbox._active:
+                            raise ValueError('Privacy acknowledgement superseded')
+                # Submission has already withdrawn access and durably queued deletion.
+                # A failed acknowledgement must not undo it or provoke webhook retries.
+                try:
+                    await asyncio.to_thread(delivery.send,chat,
+                        'Consent withdrawn. Active session cleared; saved-profile deletion requested. '
+                        'Telegram and provider histories are separate.',privacy_guard,send)
+                except Exception:
+                    pass  # Best effort, no automatic resend; worker still processes deletion.
             return reply(200, 'queued' if accepted else 'duplicate')
         except TimeoutError:
             return reply(408, 'timeout')

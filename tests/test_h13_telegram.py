@@ -85,3 +85,37 @@ def test_worker_does_not_deliver_stale_results_or_retry(inbox,change):
         run_evaluation(s,FakeDelegator(),send,user=1,chat=1,update_id=1)
     assert len(sends)==(1 if change=='delivery_failure' else 0)
     assert s._db.execute('SELECT status FROM pilot_updates').fetchone()[0]=='uncertain'
+
+
+@pytest.mark.parametrize('failure',[False,True])
+def test_privacy_acknowledgement_does_not_gate_deletion_or_repeat(inbox,failure):
+    s,_,_=inbox;a=ready(s);sent=[]
+    def send(chat,text):
+        # Withdrawal precedes even the acknowledgement dispatch.
+        with pytest.raises(PermissionError):s.get(1,1,a.token)
+        sent.append((chat,text))
+        if failure:raise RuntimeError('private transport detail')
+        return True
+    with TestClient(create_app(s,webhook_secret=SECRET,allowed_host='testserver',send=send)) as c:
+        headers={'X-Telegram-Bot-Api-Secret-Token':SECRET}
+        payload=update('/forget',id=101)
+        assert c.post('/telegram/webhook',json=payload,headers=headers).status_code==200
+        assert c.post('/telegram/webhook',json=payload,headers=headers).json()['status']=='duplicate'
+        assert len(sent)==1 and 'deletion requested' in sent[0][1]
+        s.process_forget(1,1,101)
+        assert s._db.execute('SELECT status FROM pilot_privacy').fetchone()==('completed',)
+        assert s._db.execute('SELECT COUNT(*) FROM pilot_deletions').fetchone()==(0,)
+
+
+def test_privacy_ack_does_not_use_conversation_admission(inbox):
+    s,_,_=inbox;ready(s);sent=[]
+    app=create_app(s,webhook_secret=SECRET,allowed_host='testserver',
+                   send=lambda chat,text:sent.append(text) or True)
+    assert s._flow_slots.acquire(False) and s._flow_slots.acquire(False)
+    try:
+        with TestClient(app) as c:
+            headers={'X-Telegram-Bot-Api-Secret-Token':SECRET}
+            assert c.post('/telegram/webhook',json=update('/forget'),headers=headers).status_code==200
+        assert len(sent)==1 and not s._active
+    finally:
+        s._flow_slots.release();s._flow_slots.release()

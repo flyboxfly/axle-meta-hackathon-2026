@@ -70,7 +70,10 @@ def test_stalled_flow_admission_keeps_forget_available(inbox,monkeypatch):
     s,_,_=inbox
     async def exercise():
         entered=asyncio.Queue();release=asyncio.Event()
+        real_to_thread=asyncio.to_thread
         async def blocked(*args):
+            if len(args)>2 and str(args[2]).startswith("Consent withdrawn."):
+                return await real_to_thread(*args)
             entered.put_nowait(True)
             await release.wait()
             raise RuntimeError('invented stalled delivery')
