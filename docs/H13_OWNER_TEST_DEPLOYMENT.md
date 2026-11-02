@@ -2,7 +2,9 @@
 
 Prepared November 1, 2026 (America/New_York). Planning evidence only. No installation,
 listener, tunnel, bot registration, secret provisioning or live call performed.
-Runtime pin: ab020afa120bf1656c5ae49f3021ce1456b86a58, reviewed with 363 offline tests.
+Launcher baseline pin: ab020afa120bf1656c5ae49f3021ce1456b86a58, reviewed with 363 offline tests.
+A combined package containing the [setup helper candidate](H13_SETUP_REVIEW.md) needs
+its own reviewed immutable pin before execution; that baseline lacks the helper.
 This document does not authorize launch. [Launcher review](H13_LAUNCH_ASTRA_REVIEW.md)
 and [exact invented-input rehearsal](H13_FACTORY_ASTRA_REVIEW.md) provide evidence.
 
@@ -65,8 +67,8 @@ The launcher exposes no health/status endpoint or operator drain report. Its ord
 logging is intentionally disabled. Readiness must be checked with the probes below;
 successful normal launcher exit is the available completion signal. If field-level
 live drain telemetry is required, implement it before approval rather than guessing
-from process liveness. Installation/enrollment/webhook operator tooling is also not
-implemented by this document: any helper must avoid token URLs/response payloads in
+from process liveness. The [setup helper candidate](H13_SETUP_REVIEW.md) now implements enrollment/webhook
+operations offline and awaits review. It must avoid token URLs/response payloads in
 logs, disable automatic retries, validate acknowledgements and expose fixed errors.
 Never put bot-token API URLs into curl arguments, shell history or browser address bars.
 
@@ -208,8 +210,8 @@ retained-owner shutdown policy and retention. Merge is a separate decision and i
 not necessary to run a specifically approved immutable feature commit.
 
 Current approval packet is INCOMPLETE: target environment/tunnel version, bot/provider
-account authorization and spending ceiling, private binding/location and secure
-operator helper have not been verified. This plan can be reviewed now; do not treat
+account authorization and spending ceiling, private binding/location have not been verified; the secure
+operator helper is implemented offline and awaits review. This plan can be reviewed now; do not treat
 approval of this document as permission to skip those values or implementation gaps.
 Repository [AGENTS.md](../AGENTS.md) explicitly requires separate owner approval for
 merge, deployment, runtime/secret and infrastructure changes.
