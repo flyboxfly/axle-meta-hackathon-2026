@@ -13,7 +13,8 @@ from .pilot_telegram import create_app
 class PilotLifecycle:
     def __init__(self, path, bindings, policy, *, delegator_factory, send,
                  webhook_secret, allowed_host, global_limit, carrier_limit,
-                 provider_timeout, interval, transport_clients=()):
+                 provider_timeout, interval, transport_clients=(),
+                 worker_factory=None, app_factory=None):
         self._lock = Lock()
         self._close_lock = Lock()
         self._closing = False
@@ -27,11 +28,18 @@ class PilotLifecycle:
             self.provider = BoundedDelegator(delegator_factory(self.inbox),timeout=provider_timeout)
             self.delivery = DeliveryPool(None)
             self.inbox._delivery_pool = self.delivery
-            self.worker = PilotWorker(self.inbox,self.provider,send,
+            make_worker = worker_factory or (lambda inbox,provider,send,**limits:PilotWorker(
+                inbox,provider,send,global_limit=limits['global_limit'],
+                carrier_limit=limits['carrier_limit']))
+            self.worker = make_worker(self.inbox,self.provider,send,
                 global_limit=global_limit,carrier_limit=carrier_limit)
             self.scheduler = PilotScheduler(self.worker,interval=interval)
-            self._app = create_app(self.inbox,webhook_secret=webhook_secret,
-                allowed_host=allowed_host,conversation=PilotConversation(self.inbox),send=send)
+            if app_factory is None:
+                self._app = create_app(self.inbox,webhook_secret=webhook_secret,
+                    allowed_host=allowed_host,conversation=PilotConversation(self.inbox),send=send)
+            else:
+                self._app = app_factory(self.inbox,webhook_secret=webhook_secret,
+                    allowed_host=allowed_host,send=send)
         except Exception:
             if self.provider is not None:self.provider.close()
             cleanup_failed = False

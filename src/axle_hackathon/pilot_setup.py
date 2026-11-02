@@ -10,7 +10,7 @@ import sys
 import warnings
 
 from .pilot_http import create_http_client
-from .pilot_launch import configure_private_logging, read_private_config
+from .pilot_launch import configure_private_logging, read_private_config, read_real_config
 from .pilot_transports import _json_post
 
 FAILURE='Setup stopped; remote changes may be uncertain. Inspect privately before retry.'
@@ -134,17 +134,19 @@ def main():
     configure_private_logging();os.umask(0o077)
     try:
         if not sys.stdin.isatty() or not sys.stderr.isatty():raise ValueError()
-        if len(sys.argv)!=2 or sys.argv[1] not in ('prepare','check','register','remove'):
+        if len(sys.argv)!=2 or sys.argv[1] not in ('prepare','prepare-opening','check','register','remove'):
             raise ValueError()
         action=sys.argv[1]
         path=os.environ.get('AXLE_PILOT_CONFIG_FILE','')
-        if action=='prepare':
+        if action in ('prepare','prepare-opening'):
             # All private values use non-echoing terminal input; no secret arguments.
-            if private_prompt('After owner approval, type PREPARE NEW OWNER TEST: ')!='PREPARE NEW OWNER TEST':
+            phrase_expected='PREPARE NEW OWNER TEST' if action=='prepare' else 'PREPARE NEW OPENING TEST'
+            if private_prompt('After owner approval, type '+phrase_expected+': ')!=phrase_expected:
                 raise ValueError()
             token=private_prompt('Dedicated bot token: ')
             expected=private_prompt('Expected dedicated bot username (without @): ')
-            data=dict(approved_synthetic_owner_test=True,bot_token=token,
+            approval=dict(approved_synthetic_owner_test=True) if action=='prepare' else dict(approved_real_opening_test=True)
+            data=dict(approval,bot_token=token,
                 provider_key=private_prompt('Provider key: '),
                 webhook_secret=secrets.token_urlsafe(32),
                 allowed_host=private_prompt('Generated tunnel hostname: '),
@@ -155,13 +157,15 @@ def main():
             validate_values(data)
             config_destination(path)
         else:
-            data,_=read_private_config(path);validate_values(data);token=data['bot_token']
+            try:data,_=read_private_config(path)
+            except RuntimeError:data,_=read_real_config(path)
+            validate_values(data);token=data['bot_token']
             if action!='check' and private_prompt('After owner approval, type '+action.upper()+': ')!=action.upper():
                 raise ValueError()
         with create_http_client(connect=2,read=3,write=2,pool=1,connections=1) as client:
             bot=BotOperator(client,token)
             identity=bot.identity()
-            if action=='prepare':
+            if action in ('prepare','prepare-opening'):
                 if identity.get('username')!=expected:raise ValueError()
                 bot.enroll(data['user_id'],data['chat_id'],phrase)
                 write_config(path,data)

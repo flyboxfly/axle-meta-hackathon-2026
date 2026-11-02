@@ -3,7 +3,11 @@ import json
 import re
 from time import monotonic
 from types import SimpleNamespace
+from .opening_intake import (
+    MAX_IMAGE_REQUEST_BYTES, TELEGRAM_HOSTS, validate_file_path,
+)
 from .pilot_execution import _seconds
+from .vision import MAX_IMAGE_BYTES
 
 
 def _json_post(client,url,payload,headers,*,seconds,limit):
@@ -71,3 +75,65 @@ class MetaResponsesClient:
         try:
             return SimpleNamespace(status=data['status'],output=[SimpleNamespace(**item) for item in data['output']])
         except Exception:raise RuntimeError('Invalid provider response') from None
+
+
+class MetaImageClient:
+    """Image-capable Responses interface; separate reviewed request bound."""
+    def __init__(self,client,key,*,seconds):
+        if not isinstance(key,str) or not key or not key.isascii() or any(c.isspace() for c in key):
+            raise ValueError('Explicit provider key required')
+        self._client,self._key,self._seconds=client,key,_seconds(seconds)
+        self.responses=self
+
+    def create(self,**payload):
+        if len(json.dumps(payload).encode())>MAX_IMAGE_REQUEST_BYTES:
+            raise ValueError('Provider request too large')
+        data=_json_post(self._client,'https://api.meta.ai/v1/responses',payload,
+            {'Authorization':'Bearer '+self._key},seconds=self._seconds,limit=65536)
+        try:
+            namespace=SimpleNamespace(status=data['status'],output_text=data.get('output_text',''),
+                id=data.get('id'),usage=data.get('usage'))
+            namespace.output=[SimpleNamespace(**item) for item in data.get('output',[])]
+            return namespace
+        except Exception:raise RuntimeError('Invalid provider response') from None
+
+
+class TelegramMedia:
+    """Bounded getFile/download for approved screenshots. Fixed host, no redirects."""
+    def __init__(self,client,token,*,seconds):
+        if not isinstance(token,str) or not re.fullmatch(r'[0-9]{1,20}:[A-Za-z0-9_-]{20,200}',token):
+            raise ValueError('Explicit bot token required')
+        self._client,self._token,self._seconds=client,token,_seconds(seconds)
+
+    def fetch(self,file_id,mime):
+        """Return validated file bytes; rejects oversized/reported-unknown media."""
+        if not isinstance(file_id,str) or not 1<=len(file_id)<=256:
+            raise ValueError('Invalid file reference')
+        if mime not in ('image/png','image/jpeg'):
+            raise ValueError('Use a PNG or JPEG screenshot')
+        data=_json_post(self._client,'https://api.telegram.org/bot'+self._token+'/getFile',
+            {'file_id':file_id},{},seconds=self._seconds,limit=32768)
+        result=data.get('result')
+        if (data.get('ok') is not True or not isinstance(result,dict)
+                or result.get('file_id')!=file_id):
+            raise RuntimeError('Media metadata uncertain; no automatic retry')
+        reported=result.get('file_size')
+        if reported is not None and (
+                type(reported) is not int or not 1<=reported<=MAX_IMAGE_BYTES):
+            raise ValueError('Reported file size exceeds limit')
+        path=validate_file_path(result.get('file_path',''))
+        url='https://api.telegram.org/file/bot'+self._token+'/'+path
+        deadline=monotonic()+self._seconds
+        body=bytearray()
+        try:
+            with self._client.stream('GET',url,follow_redirects=False) as response:
+                if response.status_code!=200 or response.request.url.host not in TELEGRAM_HOSTS:
+                    raise ValueError()
+                for chunk in response.iter_raw():
+                    if monotonic()>=deadline or len(body)+len(chunk)>MAX_IMAGE_BYTES:
+                        raise ValueError()
+                    body.extend(chunk)
+                if monotonic()>=deadline:raise ValueError()
+        except Exception:
+            raise RuntimeError('Media download uncertain; no automatic retry') from None
+        return bytes(body),mime

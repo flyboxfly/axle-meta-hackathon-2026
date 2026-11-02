@@ -23,10 +23,19 @@ class BoundedDelegator:
         self._executor = TrackedExecutor(max_workers=1, thread_name_prefix='pilot-model')
 
     def evaluate(self, *args):
+        return self._run(self._delegator.evaluate, args, {})
+
+    def extract(self, *args, **kwargs):
+        return self._run(self._delegator.extract, args, kwargs)
+
+    def select_pricing(self, *args, **kwargs):
+        return self._run(self._delegator.select_pricing, args, kwargs)
+
+    def _run(self, func, args, kwargs):
         if not self._slot.acquire(blocking=False):
             raise RuntimeError('Provider capacity reached')
         def attempt():
-            try:return self._delegator.evaluate(*args)
+            try:return func(*args, **kwargs)
             finally:self._slot.release()
         try:future = self._executor.submit(attempt)
         except Exception:
