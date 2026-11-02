@@ -1,5 +1,7 @@
 # H13 isolated launch candidate
 
+Follow-up: [owner-test deployment and recovery plan](H13_OWNER_TEST_DEPLOYMENT.md).
+
 November 1, 2026. Baseline 2e7a81e. Offline tests only; launcher not executed against
 a listener, live provider or bot. No credentials or runtime configuration created.
 
