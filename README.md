@@ -1,4 +1,13 @@
+> **H13 — offline carrier pilot modules; Telegram proposed:** See [H13 specification](docs/H13_TELEGRAM_PILOT.md), [planning core](docs/H13_CORE_REVIEW.md), [consent and profile memory](docs/H13_MEMORY_REVIEW.md) and [runtime role definitions](docs/agents/README.md). Separate Python modules support confirmed revision snapshots, cost normalization, profile metadata and consent-gated SQLite profile saves. Telegram, live processing disclosures and real-data specialist coordination remain unbuilt. Existing synthetic behavior remains unchanged.
+
 # Axle × Meta — local freight prototype
+
+H13 follow-up: [synthetic Meta adapter and offline evidence](docs/H13_META_REVIEW.md).
+The injected-client adapter is tested with mocks; live Meta/Telegram integration remains pending.
+See the [Telegram boundary and worker candidate](docs/H13_TELEGRAM_BOUNDARY_REVIEW.md)
+for the authenticated offline command/queue/model/fake-delivery test and remaining live work.
+The [synthetic conversation flow](docs/H13_CONVERSATION_REVIEW.md) adds disclosure,
+equipment/trip intake, reviewed confirmation, corrections and explicit profile saving.
 
 ## H11 remote browser integration — review candidate
 
