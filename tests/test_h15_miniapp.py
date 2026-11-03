@@ -116,11 +116,50 @@ def test_initdata_wrong_token_rejected(store, client):
     assert response.status_code == 400
 
 
-@pytest.mark.parametrize('age', [25 * 3600, -3600])
+@pytest.mark.parametrize('age', [3 * 3600, 25 * 3600, -3600])
 def test_initdata_expired_and_future_rejected(store, client, age):
     consent(store)
     response = api(client, 'state', launch(age=age))
     assert response.status_code == 400
+
+
+def test_old_launch_rejected_after_session_rotation(store, client):
+    consent(store)
+    first = launch(age=30)
+    assert api(client, 'state', first).status_code == 200
+    assert api(client, 'state', first).status_code == 200
+    conversation = OpeningConversation(store)
+    conversation.handle(1, 1, '/start')
+    nonce = store._conversation_states['owner']['nonce']
+    conversation.handle(1, 1, f'/reply {nonce} session')
+    rotated = api(client, 'state', first)
+    assert rotated.status_code == 403
+    assert 'reopen' in rotated.json()['error'].lower()
+    fresh = launch(age=0)
+    assert api(client, 'state', fresh).status_code == 200
+
+
+def test_old_launch_rejected_after_expiry_rotation(tmp_path, clock):
+    path = tmp_path / 'rotation.sqlite3'
+    policy = MemoryPolicy(version='test-miniapp-v1', processing_notice='Invented offline records only',
+                          session_seconds=60)
+    inbox = PilotInbox(path, dict(BINDINGS), policy, clock=clock)
+    inbox._opening = OpeningSessions(dict(BINDINGS))
+    try:
+        consent(inbox)
+        app = create_opening_app(inbox, webhook_secret=SECRET, allowed_host='testserver',
+                                 conversation=OpeningConversation(inbox), send=lambda *_: True,
+                                 miniapp_bot_token=BOT_TOKEN)
+        with TestClient(app) as tested:
+            first = launch(age=30)
+            assert api(tested, 'state', first).status_code == 200
+            clock.advance(61)
+            assert api(tested, 'state', first).status_code == 403
+            consent(inbox)
+            assert api(tested, 'state', first).status_code == 403
+            assert api(tested, 'state', launch(age=0)).status_code == 200
+    finally:
+        inbox.close()
 
 
 def test_initdata_malformed_rejected(store, client):
@@ -212,6 +251,7 @@ def test_host_mismatch_rejected(store):
                              miniapp_bot_token=BOT_TOKEN)
     with TestClient(app) as tested:
         assert tested.get('/miniapp/').status_code == 404
+        assert tested.get('/miniapp/app.js').status_code == 404
         response = api(tested, 'state', launch())
         assert response.status_code == 403
 
@@ -223,16 +263,45 @@ def test_page_served_with_protections(store, client):
     assert 'https://telegram.org' in response.headers['Content-Security-Policy']
     assert 'X-Frame-Options' not in response.headers
     assert 'frame-ancestors' not in response.headers.get('Content-Security-Policy', '')
-    assert 'axle' in response.text and 'initData' in response.text
+    assert 'axle' in response.text
     assert BOT_TOKEN not in response.text and SECRET not in response.text
+
+
+def test_served_scripts_comply_with_served_csp(store, client):
+    import re
+    from pathlib import Path
+    page = client.get('/miniapp/')
+    csp = page.headers['Content-Security-Policy']
+    assert "'unsafe-inline'" not in csp.split('script-src')[1].split(';')[0]
+    scripts = re.findall(r'<script([^>]*)>(.*?)</script>', page.text, re.S)
+    assert scripts, 'expected script tags'
+    for attrs, code in scripts:
+        assert code.strip() == '', 'inline script violates served CSP'
+        match = re.search(r'src="([^"]+)"', attrs)
+        assert match, 'script without src violates served CSP'
+        src = match.group(1)
+        assert src in ('https://telegram.org/js/telegram-web-app.js', '/miniapp/app.js'), src
+    handlers = re.findall(r'\s(on(?:click|load|error|submit|change|input|focus|blur|key\w*))=', page.text)
+    assert handlers == []
+    asset = client.get('/miniapp/app.js')
+    assert asset.status_code == 200
+    assert asset.headers['Content-Type'].startswith('application/javascript')
+    assert asset.headers['Cache-Control'] == 'no-store'
+    assert asset.headers['X-Content-Type-Options'] == 'nosniff'
+    shipped = Path('src/axle_hackathon/miniapp_app.js').read_text()
+    assert asset.text == shipped and 'initData' in asset.text
+    assert BOT_TOKEN not in asset.text and SECRET not in asset.text
 
 
 def profiled(client, data=None, fields=None):
     data = data or launch()
     response = api(client, 'profile', data, request_id=rid(), fields=fields or dict(PROFILE))
     assert response.status_code == 200
-    assert response.json()['state']['staged_profile']['minimum_job_charge']['value'] == '100'
-    confirmed = api(client, 'profile/confirm', data, request_id=rid())
+    state = response.json()['state']
+    assert state['staged_profile']['minimum_job_charge']['value'] == '100'
+    assert state['stage_token']
+    confirmed = api(client, 'profile/confirm', data, request_id=rid(),
+                    stage_token=state['stage_token'])
     assert confirmed.status_code == 200
     assert confirmed.json()['state']['stage'] == 'photo'
     return data
@@ -259,6 +328,42 @@ def test_profile_invalid_rejected_without_staging(store, client):
         store._opening.get_profile(1, 1)
     state = api(client, 'state', data, request_id=rid()).json()['state']
     assert state['stage'] == 'profile' and state['staged_profile'] is None
+
+
+def test_profile_confirm_requires_exact_staged_token(store, client):
+    consent(store)
+    data = launch()
+    first = api(client, 'profile', data, request_id=rid(), fields=dict(PROFILE))
+    token_a = first.json()['state']['stage_token']
+    missing = api(client, 'profile/confirm', data, request_id=rid())
+    assert missing.status_code == 400
+    wrong = api(client, 'profile/confirm', data, request_id=rid(), stage_token='0' * 22)
+    assert wrong.status_code == 409 and wrong.json()['conflict'] is True
+    second = api(client, 'profile', data, request_id=rid(), fields=dict(PROFILE))
+    token_b = second.json()['state']['stage_token']
+    assert token_b != token_a
+    stale = api(client, 'profile/confirm', data, request_id=rid(), stage_token=token_a)
+    assert stale.status_code == 409
+    with pytest.raises(KeyError):
+        store._opening.get_profile(1, 1)
+    fresh = api(client, 'profile/confirm', data, request_id=rid(), stage_token=token_b)
+    assert fresh.status_code == 200
+    assert store._opening.profile_version(1, 1) == 1
+
+
+def test_profile_confirm_rejected_after_bot_change(store, client):
+    conversation = consent(store)
+    data = launch()
+    staged = api(client, 'profile', data, request_id=rid(), fields=dict(PROFILE))
+    token = staged.json()['state']['stage_token']
+    conversation.handle(1, 1, 'cpm 2.00; target 3.00; minimum 50')
+    flow = store._conversation_states['owner']
+    conversation.handle(1, 1, f"/confirm {flow['nonce']}")
+    assert store._opening.profile_version(1, 1) == 1
+    stale = api(client, 'profile/confirm', data, request_id=rid(), stage_token=token)
+    assert stale.status_code == 409
+    assert stale.json()['state']['stage'] == 'photo'
+    assert str(store._opening.get_profile(1, 1).operating_cpm) == '2.00'
 
 
 def test_duplicate_profile_request_never_reexecutes(store, client):

@@ -8,7 +8,13 @@ identity, client prices and client confirmation claims are never trusted.
 
 Trust model:
 - initData is an authentication credential. Reuse across one launch's many
-  requests is legitimate while fresh and while consent stays active.
+  requests is legitimate while fresh and while the SAME consented session
+  stays active. Each launch (carrier, auth_date) binds the session
+  generation it first used; after /forget, expiry or a new /start the
+  old launch is rejected and only a reopened app (fresh launch) binds
+  the replacement session. Launch data lives at most two hours with
+  60 seconds of future skew: enough for the attended one-hour session
+  plus slack, and rotation rejects old launches immediately anyway.
 - Replay protection applies to state-changing requests instead: each one
   carries a single-use client request_id. A repeated request_id never
   re-executes; the recorded outcome is returned.
@@ -44,7 +50,12 @@ from .remote_app import _is_valid_hostname
 
 INITDATA_MAX_CHARS = 8192
 BODY_MAX_BYTES = 65536
-AUTH_MAX_AGE_SECONDS = 24 * 3600
+# Bounded launch-data lifetime for the attended pilot: the consented bot
+# session lasts one hour, and each app open mints fresh initData, so two
+# hours covers the admission window with slack while bounding replay of
+# authentication material. The launch-to-session binding below is the
+# stricter boundary: rotated sessions reject old launches immediately.
+AUTH_MAX_AGE_SECONDS = 2 * 3600
 AUTH_FUTURE_SKEW_SECONDS = 60
 MINIAPP_UPDATE_BASE = 2 ** 62
 MINIAPP_UPDATE_LIMIT = 2 ** 63
@@ -121,12 +132,39 @@ def ensure_miniapp_tables(inbox):
             request_id TEXT PRIMARY KEY, carrier TEXT NOT NULL, kind TEXT NOT NULL,
             revision INTEGER, update_id INTEGER, status TEXT NOT NULL,
             created REAL NOT NULL)''')
+        inbox._db.execute('''CREATE TABLE IF NOT EXISTS miniapp_launches (
+            carrier TEXT NOT NULL, auth_date INTEGER NOT NULL,
+            generation TEXT NOT NULL, created REAL NOT NULL,
+            PRIMARY KEY (carrier, auth_date))''')
         inbox._db.execute('''CREATE TABLE IF NOT EXISTS miniapp_seq (
             name TEXT PRIMARY KEY, next_id INTEGER NOT NULL)''')
         inbox._db.execute('INSERT OR IGNORE INTO miniapp_seq VALUES (?,?)',
                           ('update_id', MINIAPP_UPDATE_BASE))
         if not hasattr(inbox, '_miniapp_staging'):
             inbox._miniapp_staging = {}
+
+
+def bind_launch_session(inbox, carrier, auth_date, generation):
+    """Bind one Mini App launch to the consented session it first used.
+
+    Legitimate multi-request use reuses one launch (same auth_date) and
+    passes. After /forget, expiry or a new /start the active generation
+    rotates, so the old launch is rejected; reopening the app (a fresh
+    launch with a new auth_date) binds the replacement session.
+    """
+    now = time.time()
+    with inbox._lock, inbox._db:
+        inbox._db.execute('DELETE FROM miniapp_launches WHERE created < ?',
+                          (now - AUTH_MAX_AGE_SECONDS - 300,))
+        if inbox._db.execute('SELECT count(*) FROM miniapp_launches').fetchone()[0] >= 10000:
+            raise RuntimeError('Mini App capacity reached')
+        inbox._db.execute('INSERT OR IGNORE INTO miniapp_launches VALUES (?,?,?,?)',
+                          (carrier, auth_date, generation, now))
+        row = inbox._db.execute('SELECT generation FROM miniapp_launches '
+                                'WHERE carrier=? AND auth_date=?',
+                                (carrier, auth_date)).fetchone()
+        if row is None or row[0] != generation:
+            raise PermissionError('Session changed; reopen the Mini App')
 
 
 def allocate_miniapp_update_id(inbox):
@@ -286,7 +324,8 @@ def build_state(inbox, user, chat):
         profile = None
     if profile is None:
         state = {'stage': 'profile',
-                 'staged_profile': profile_payload(staging) if staging else None}
+                 'staged_profile': profile_payload(staging['profile']) if staging else None,
+                 'stage_token': staging['token'] if staging else None}
         return state
     try:
         snapshot = opening.get(user, chat)
@@ -359,6 +398,7 @@ def mount_miniapp(app, inbox, *, bot_token, allowed_host):
     ensure_miniapp_tables(inbox)
     from pathlib import Path
     page = Path(__file__).with_name('miniapp.html').read_text()
+    app_js = Path(__file__).with_name('miniapp_app.js').read_text()
 
     def denied(code, message):
         return JSONResponse({'ok': False, 'error': message}, status_code=code,
@@ -391,6 +431,8 @@ def mount_miniapp(app, inbox, *, bot_token, allowed_host):
         if token is None:
             raise PermissionError('Run /start in the bot first')
         inbox._access(user, chat, token)
+        generation = hashlib.sha256(token.encode('ascii')).hexdigest()
+        bind_launch_session(inbox, carrier, claimed['auth_date'], generation)
         return user, chat, carrier, token
 
     def conflict(user, chat, message):
@@ -405,6 +447,17 @@ def mount_miniapp(app, inbox, *, bot_token, allowed_host):
             return HTMLResponse('Not found', status_code=404, headers=dict(NO_STORE))
         return HTMLResponse(page, headers={**NO_STORE,
             'Content-Security-Policy': PAGE_CSP})
+
+    @app.get('/miniapp/app.js')
+    async def miniapp_script(request: Request):
+        # Same-origin application script; the page carries no inline code,
+        # keeping script-src free of unsafe-inline.
+        if request.headers.get('host') != allowed_host:
+            return HTMLResponse('Not found', status_code=404, headers=dict(NO_STORE))
+        return HTMLResponse(app_js, media_type='application/javascript',
+                            headers={**NO_STORE,
+                                     'Content-Security-Policy': PAGE_CSP,
+                                     'X-Content-Type-Options': 'nosniff'})
 
     @app.post('/miniapp/api/state')
     async def miniapp_state(request: Request):
@@ -440,13 +493,19 @@ def mount_miniapp(app, inbox, *, bot_token, allowed_host):
                                          'state': build_state(inbox, user, chat)},
                                         headers=dict(NO_STORE))
                 return denied(409, 'Request already received')
+            opening = getattr(inbox, '_opening', None)
+            if opening is None:
+                complete_request(inbox, request_id)
+                raise ValueError('Opening workflow unavailable')
             try:
                 staged = validate_profile_pairs(fields)
             except ValueError:
                 complete_request(inbox, request_id)
                 raise
             with inbox._lock:
-                inbox._miniapp_staging[carrier] = staged
+                inbox._miniapp_staging[carrier] = {
+                    'profile': staged, 'token': token_urlsafe(16),
+                    'version': opening.profile_version(user, chat)}
             complete_request(inbox, request_id)
             touch_conversation(inbox, carrier)
             return JSONResponse({'ok': True, 'state': build_state(inbox, user, chat)},
@@ -477,12 +536,23 @@ def mount_miniapp(app, inbox, *, bot_token, allowed_host):
             if opening is None:
                 complete_request(inbox, request_id)
                 raise ValueError('Opening workflow unavailable')
+            presented = data.get('stage_token')
+            if not isinstance(presented, str) or not presented:
+                complete_request(inbox, request_id)
+                raise ValueError('Profile review token required')
             with inbox._lock:
                 staged = inbox._miniapp_staging.get(carrier)
-            if staged is None:
+            if staged is None or not hmac.compare_digest(staged['token'], presented):
                 complete_request(inbox, request_id)
-                raise ValueError('Submit the profile form first')
-            opening.set_profile(user, chat, staged)
+                return conflict(user, chat, 'This profile review is stale; submit the form again')
+            try:
+                opening.set_profile_expected(user, chat, staged['profile'],
+                                             expected_version=staged['version'])
+            except ValueError:
+                with inbox._lock:
+                    inbox._miniapp_staging.pop(carrier, None)
+                complete_request(inbox, request_id)
+                return conflict(user, chat, 'The profile changed elsewhere; review the current state')
             with inbox._lock:
                 inbox._miniapp_staging.pop(carrier, None)
             complete_request(inbox, request_id)
@@ -664,9 +734,10 @@ def mount_miniapp(app, inbox, *, bot_token, allowed_host):
                 return denied(409, 'Request already received')
             update_id = allocate_miniapp_update_id(inbox)
             inbox.submit(user, chat, update_id, 'forget')
-            with inbox._lock:
+            with inbox._lock, inbox._db:
                 inbox._conversation_states.pop(carrier, None)
                 inbox._miniapp_staging.pop(carrier, None)
+                inbox._db.execute('DELETE FROM miniapp_launches WHERE carrier=?', (carrier,))
             complete_request(inbox, request_id, update_id)
             return JSONResponse({'ok': True, 'forgotten': True}, headers=dict(NO_STORE))
         except PermissionError as exc:

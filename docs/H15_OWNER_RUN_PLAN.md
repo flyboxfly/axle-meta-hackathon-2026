@@ -102,6 +102,11 @@ that existing hostname at the running host.
   enforces freshness, resolves the signed user to exactly one authorized
   binding, and requires the active consented session. initDataUnsafe and
   browser-supplied identity, prices, or confirmation are never trusted.
+  Bounded policy: launch data lives at most two hours (60s future skew);
+  each launch binds the consented session it first used, so after /forget,
+  expiry or a new /start the old browser access fails and only a reopened
+  app binds the replacement session. Profile confirmation needs the exact
+  server-issued review token for the staged values.
 - Journey: confirm session profile in the app, upload the screenshot in
   the bot, reopen the app to review the draft plus trip inputs, confirm
   the exact revision, request the opening bid, optionally enter a

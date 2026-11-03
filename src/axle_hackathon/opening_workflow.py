@@ -135,6 +135,7 @@ class OpeningSessions:
         self._bindings = dict(bindings)
         self._sessions: dict[str, OpeningSnapshot] = {}
         self._profiles: dict[str, OpeningProfile] = {}
+        self._profile_versions: dict[str, int] = {}
         self._results: dict[str, dict] = {}
         self._lock = RLock()
 
@@ -148,11 +149,28 @@ class OpeningSessions:
         with self._lock:
             carrier = self._carrier(user, chat)
             self._profiles[carrier] = profile
+            self._profile_versions[carrier] = self._profile_versions.get(carrier, 0) + 1
             return profile
 
     def get_profile(self, user: int, chat: int) -> OpeningProfile:
         with self._lock:
             return self._profiles[self._carrier(user, chat)]
+
+    def profile_version(self, user: int, chat: int) -> int:
+        """Monotonic profile writes, 0 when never set. Never reset on clear."""
+        with self._lock:
+            return self._profile_versions.get(self._carrier(user, chat), 0)
+
+    def set_profile_expected(self, user: int, chat: int, profile: OpeningProfile,
+                             *, expected_version: int) -> OpeningProfile:
+        """Atomic compare-and-set: rejects when another surface wrote first."""
+        with self._lock:
+            carrier = self._carrier(user, chat)
+            if self._profile_versions.get(carrier, 0) != expected_version:
+                raise ValueError('Stale profile submission')
+            self._profiles[carrier] = profile
+            self._profile_versions[carrier] = expected_version + 1
+            return profile
 
     def put(self, user: int, chat: int, draft: ScreenshotDraft, pricing: OpeningPricing,
             *, expected_revision: int, trip: OpeningTrip | None = None,
