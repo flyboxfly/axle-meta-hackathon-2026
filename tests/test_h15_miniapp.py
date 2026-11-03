@@ -267,6 +267,7 @@ def test_host_mismatch_rejected(store):
     with TestClient(app) as tested:
         assert tested.get('/miniapp/').status_code == 404
         assert tested.get('/miniapp/app.js').status_code == 404
+        assert tested.get('/miniapp/logo.png').status_code == 404
         response = api(tested, 'state', launch())
         assert response.status_code == 403
 
@@ -306,6 +307,44 @@ def test_served_scripts_comply_with_served_csp(store, client):
     shipped = Path('src/axle_hackathon/miniapp_app.js').read_text()
     assert asset.text == shipped and 'initData' in asset.text
     assert BOT_TOKEN not in asset.text and SECRET not in asset.text
+
+
+def test_logo_asset_served_locally_with_protections(store, client):
+    from pathlib import Path
+    vendored = Path('src/axle_hackathon/miniapp_logo.png').read_bytes()
+    assert len(vendored) > 1000
+    page = client.get('/miniapp/')
+    assert page.status_code == 200
+    assert '<img class="mark" src="/miniapp/logo.png" alt=""' in page.text
+    assert 'width="512" height="512"' in page.text
+    assert 'axle<span>.</span>' in page.text
+    assert "img-src 'self'" in page.headers['Content-Security-Policy']
+    asset = client.get('/miniapp/logo.png')
+    assert asset.status_code == 200
+    assert asset.headers['Content-Type'] == 'image/png'
+    assert asset.headers['Cache-Control'] == 'no-store'
+    assert asset.headers['X-Content-Type-Options'] == 'nosniff'
+    assert asset.content == vendored
+
+
+def test_stepper_short_label_only_in_progress_indicator(store, client):
+    import re
+    from pathlib import Path
+    page = client.get('/miniapp/').text
+    steps = re.search(r'<ol class="steps".*?</ol>', page, re.S).group(0)
+    assert steps.count('<li') == 5
+    assert 'Srnshot' in steps
+    visible = steps.replace('aria-label="2 · Screenshot"', '')
+    assert 'Screenshot' not in visible
+    assert 'aria-label="2 · Screenshot"' in steps
+    assert 'aria-hidden="true">2 · Srnshot<' in steps
+    assert 'white-space:nowrap' in page
+    assert '@media(max-width:380px)' in page
+    assert 'STEP 2 · SCREENSHOT' in page
+    assert 'aria-label="Progress"' in page
+    shipped_js = Path('src/axle_hackathon/miniapp_app.js').read_text()
+    assert 'Screenshot facts' in shipped_js
+    assert 'Srnshot' not in shipped_js
 
 
 def profiled(client, data=None, fields=None):

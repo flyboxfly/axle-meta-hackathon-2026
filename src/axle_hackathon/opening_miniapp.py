@@ -399,6 +399,10 @@ def mount_miniapp(app, inbox, *, bot_token, allowed_host):
     from pathlib import Path
     page = Path(__file__).with_name('miniapp.html').read_text()
     app_js = Path(__file__).with_name('miniapp_app.js').read_text()
+    # Official circular brand mark, vendored byte-identical from the
+    # pre-existing product website (axle-icon-512.png, 512x512 RGBA).
+    # Served only through the narrow route below; never redrawn.
+    logo_png = Path(__file__).with_name('miniapp_logo.png').read_bytes()
 
     def denied(code, message):
         return JSONResponse({'ok': False, 'error': message}, status_code=code,
@@ -458,6 +462,16 @@ def mount_miniapp(app, inbox, *, bot_token, allowed_host):
                             headers={**NO_STORE,
                                      'Content-Security-Policy': PAGE_CSP,
                                      'X-Content-Type-Options': 'nosniff'})
+
+    @app.get('/miniapp/logo.png')
+    async def miniapp_logo(request: Request):
+        # Single vendored brand asset; same Host gating as page/script.
+        # Page CSP already allows img-src 'self', so no policy change.
+        if request.headers.get('host') != allowed_host:
+            return HTMLResponse('Not found', status_code=404, headers=dict(NO_STORE))
+        from fastapi.responses import Response
+        return Response(logo_png, media_type='image/png',
+                        headers={**NO_STORE, 'X-Content-Type-Options': 'nosniff'})
 
     @app.post('/miniapp/api/state')
     async def miniapp_state(request: Request):
