@@ -35,6 +35,17 @@ def _json_post(client,url,payload,headers,*,seconds,limit):
         raise RuntimeError('Remote outcome uncertain; no automatic retry') from None
 
 
+def _check_delivery(result,chat):
+    message=result.get('result')
+    if (result.get('ok') is not True or not isinstance(message,dict)
+            or type(message.get('message_id')) is not int or message['message_id']<=0
+            or not isinstance(message.get('chat'),dict)
+            or type(message['chat'].get('id')) is not int
+            or message['chat']['id']!=chat
+            or message['chat'].get('type')!='private'):
+        raise RuntimeError('Delivery uncertain; no automatic retry')
+
+
 class TelegramSender:
     def __init__(self,client,token,*,allowed_chats,seconds):
         if not isinstance(token,str) or not re.fullmatch(r'[0-9]{1,20}:[A-Za-z0-9_-]{20,200}',token):
@@ -49,14 +60,40 @@ class TelegramSender:
         if not isinstance(text,str) or not 1<=len(text)<=4000:raise ValueError('Bounded text required')
         result=_json_post(self._client,self._url,{'chat_id':chat,'text':text},{},
                           seconds=self._seconds,limit=32768)
-        message=result.get('result')
-        if (result.get('ok') is not True or not isinstance(message,dict)
-                or type(message.get('message_id')) is not int or message['message_id']<=0
-                or not isinstance(message.get('chat'),dict)
-                or type(message['chat'].get('id')) is not int
-                or message['chat']['id']!=chat
-                or message['chat'].get('type')!='private'):
-            raise RuntimeError('Delivery uncertain; no automatic retry')
+        _check_delivery(result,chat)
+        return True
+
+
+class TelegramWebAppButton:
+    """One inline web_app button per message; URL fixed to the allowed host.
+
+    The button opens https://<allowed_host>/miniapp/ only. No other markup,
+    URLs or chat types are expressible here.
+    """
+    def __init__(self,client,token,*,allowed_chats,allowed_host,seconds):
+        if not isinstance(token,str) or not re.fullmatch(r'[0-9]{1,20}:[A-Za-z0-9_-]{20,200}',token):
+            raise ValueError('Explicit bot token required')
+        if not allowed_chats or any(type(c) is not int or c<=0 for c in allowed_chats):
+            raise ValueError('Approved private chats required')
+        from .remote_app import _is_valid_hostname
+        if not _is_valid_hostname(allowed_host):
+            raise ValueError('Exact allowed host required')
+        self._client,self._url=client,'https://api.telegram.org/bot'+token+'/sendMessage'
+        self._chats=frozenset(allowed_chats);self._seconds=_seconds(seconds)
+        self._web_app_url='https://'+allowed_host+'/miniapp/'
+
+    @property
+    def web_app_url(self):
+        return self._web_app_url
+
+    def __call__(self,chat,text,*,label):
+        if type(chat) is not int or chat not in self._chats:raise PermissionError('Unapproved chat')
+        if not isinstance(text,str) or not 1<=len(text)<=4000:raise ValueError('Bounded text required')
+        if not isinstance(label,str) or not 1<=len(label)<=64:raise ValueError('Bounded label required')
+        result=_json_post(self._client,self._url,{'chat_id':chat,'text':text,'reply_markup':
+            {'inline_keyboard':[[{'text':label,'web_app':{'url':self._web_app_url}}]]}},{},
+            seconds=self._seconds,limit=32768)
+        _check_delivery(result,chat)
         return True
 
 

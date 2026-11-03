@@ -25,9 +25,11 @@ second screenshots beyond the spare budget, and any public evidence.
 ## Bounded model attempts
 
 Lifetime caps enforced by the launcher and the durable attempt ledger:
-global 4, per-carrier 4. Planned use is 2 attempts: 1 screenshot extraction +
-1 pricing selection. The remaining 2 are spare for one failed extraction
-followed by one re-sent screenshot, or one failed selection followed by one
+global 4, per-carrier 4. Planned use without a counteroffer is 2 attempts:
+1 screenshot extraction + 1 pricing selection. A counteroffer reevaluation is
+a third fresh attempt (traced: extraction + selection + counteroffer
+selection). The remaining budget is spare for one failed extraction followed
+by one re-sent screenshot, or one failed selection followed by one
 re-confirmation and re-price. There are no automatic retries; every failure is
 terminal for that attempt and keeps its reservation. If all 4 attempts are
 consumed or any outcome is uncertain, the test ends and enters recovery below.
@@ -82,6 +84,34 @@ A timeout never authorizes a retry.
   truncation; daily totals alone do not prove it. Likewise, a small
   reported file size makes media failure less likely but does not rule
   out download, format, or dimension faults.
+
+## Telegram Mini App review surface (offline-verified, live rehearsal pending)
+
+The bot conversation remains the fallback; the Mini App is an additional
+guided surface on the same server-held session. No new secrets, bots, or
+infrastructure: the attended tunnel hostname already configured as the
+exact `allowed_host` also feeds the inline button URL
+(`https://<allowed_host>/miniapp/`). Setup adds no step beyond pointing
+that existing hostname at the running host.
+
+- Owner runs /start, chooses session, then /app in the private bot chat
+  to receive the review-app button. The button URL is fixed server-side;
+  no identity or authority travels in the URL.
+- The app verifies raw Telegram initData server-side (HMAC-SHA-256 per
+  https://core.telegram.org/bots/webapps#validating-data-received-via-the-mini-app),
+  enforces freshness, resolves the signed user to exactly one authorized
+  binding, and requires the active consented session. initDataUnsafe and
+  browser-supplied identity, prices, or confirmation are never trusted.
+- Journey: confirm session profile in the app, upload the screenshot in
+  the bot, reopen the app to review the draft plus trip inputs, confirm
+  the exact revision, request the opening bid, optionally enter a
+  clearly labeled simulated numeric counteroffer and reevaluate.
+- Opening the app, forms, reads, corrections review and confirmations
+  spend no model attempts. Requesting evaluation queues through the same
+  budgeted ledger path as bot /price; duplicates cannot spend twice.
+- Either surface invalidates the other on edit: a Mini App correction
+  rotates the bot nonce and resyncs its revision, and stale revisions
+  are rejected on both sides. Screenshot upload stays in the bot.
 
 ## Staged procedure after explicit authorization
 

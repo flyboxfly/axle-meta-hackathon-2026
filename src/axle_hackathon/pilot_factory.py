@@ -7,7 +7,8 @@ from .pilot_http import create_http_client
 from .pilot_lifecycle import PilotLifecycle
 from .pilot_meta import PilotDelegator
 from .pilot_runtime import OpeningWorker
-from .pilot_transports import MetaImageClient, MetaResponsesClient, TelegramMedia, TelegramSender
+from .pilot_transports import (MetaImageClient, MetaResponsesClient, TelegramMedia,
+                               TelegramSender, TelegramWebAppButton)
 
 
 def build_synthetic_host(path, bindings, policy, *, provider_key, bot_token,
@@ -53,6 +54,8 @@ def build_opening_host(path, bindings, policy, *, provider_key, bot_token,
         image=MetaImageClient(image_http,provider_key,seconds=40)
         sender=TelegramSender(telegram_http,bot_token,
             allowed_chats={chat for user,chat in bindings},seconds=4)
+        button=TelegramWebAppButton(telegram_http,bot_token,
+            allowed_chats={chat for user,chat in bindings},allowed_host=allowed_host,seconds=4)
         media=TelegramMedia(telegram_http,bot_token,seconds=15)
         def delegator_factory(inbox):
             sessions = OpeningSessions(bindings)
@@ -63,7 +66,8 @@ def build_opening_host(path, bindings, policy, *, provider_key, bot_token,
                                  carrier_limit=carrier_limit)
         def app_factory(inbox,*,webhook_secret,allowed_host,send):
             return create_opening_app(inbox,webhook_secret=webhook_secret,
-                allowed_host=allowed_host,conversation=OpeningConversation(inbox),send=send)
+                allowed_host=allowed_host,conversation=OpeningConversation(inbox),send=send,
+                miniapp_bot_token=bot_token,miniapp_button=button)
         owner=PilotLifecycle(path,bindings,policy,
             delegator_factory=delegator_factory,send=sender,
             webhook_secret=webhook_secret,allowed_host=allowed_host,

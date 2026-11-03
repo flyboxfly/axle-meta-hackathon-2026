@@ -36,6 +36,10 @@ def evaluate_offer(data: OfferInputs) -> dict:
     missing = []
     if data.loaded_miles is None:
         missing.append('loaded_miles')
+    if data.deadhead_miles is None:
+        missing.append('deadhead_miles')
+    if data.reposition_miles is None:
+        missing.append('reposition_miles')
     if data.operating_cpm is None:
         missing.append('operating_cpm')
     if data.target_all_mile_rpm is None:
@@ -44,9 +48,12 @@ def evaluate_offer(data: OfferInputs) -> dict:
         missing.append('minimum_job_charge')
     if data.schedule_feasible is None:
         missing.append('schedule_feasibility')
-    miles = None
-    if data.loaded_miles is not None:
-        miles = data.loaded_miles + (data.deadhead_miles or 0) + (data.reposition_miles or 0)
+    # Unknown segments stay unknown; explicit zero is valid and counted once.
+    if (data.loaded_miles is None or data.deadhead_miles is None
+            or data.reposition_miles is None):
+        miles = None
+    else:
+        miles = data.loaded_miles + data.deadhead_miles + data.reposition_miles
     # Single CPM cost term; segments counted once; minimum compared, never added.
     cost = miles * data.operating_cpm if miles is not None and data.operating_cpm is not None else None
     target_revenue = miles * data.target_all_mile_rpm if miles is not None and data.target_all_mile_rpm is not None else None
@@ -69,6 +76,8 @@ def evaluate_offer(data: OfferInputs) -> dict:
         all_mile_rpm=money(data.compensation / miles) if miles else None,
         estimated_operating_cost=money(cost) if cost is not None else None,
         target_revenue=money(target_revenue) if target_revenue is not None else None,
+        minimum_job_charge=money(data.minimum_job_charge)
+        if data.minimum_job_charge is not None else None,
         revenue_gap_to_target=money(gap) if gap is not None else None,
         estimated_operating_surplus=money(surplus) if surplus is not None else None,
         missing_information=missing,

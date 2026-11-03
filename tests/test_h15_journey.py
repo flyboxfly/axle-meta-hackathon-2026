@@ -297,11 +297,40 @@ def test_offer_accept_and_minimum_floor(store):
     floor = price_case(store, ('target 1.00', 'cpm 1.25', 'minimum 400', 'reposition 20',
                                'counter 350'), base=80)
     assert 'NEGOTIATE' in floor
+    assert 'I can do it at $400.00' in floor.split('Broker wording')[1]
+
+
+def test_unknown_segments_stay_unknown_in_evaluation(store):
+    missing_repo = price_case(store, ('target 2.50', 'cpm 1.25', 'minimum 100',
+                                      'counter 900'))
+    assert 'NEED_MORE_INFORMATION' in missing_repo
+    assert 'reposition_miles' in missing_repo
+    missing_dh = price_case(store, ('target 2.50', 'cpm 1.25', 'minimum 100',
+                                    'reposition 20', 'deadhead unknown', 'counter 900'),
+                            base=70)
+    assert 'NEED_MORE_INFORMATION' in missing_dh and 'deadhead_miles' in missing_dh
+
+
+def test_explicit_zero_segments_accepted(store):
+    text = price_case(store, ('target 2.50', 'cpm 1.25', 'minimum 100', 'deadhead 0',
+                              'reposition 0', 'counter 650'))
+    assert ': ACCEPT' in text
+    assert 'Total miles: 180' in text
+
+
+def test_negotiate_without_consistent_ask_omits_number(store):
+    text = price_case(store, ('target 1.00', 'cpm 1.25', 'minimum 100', 'reposition 20',
+                              'counter 200'))
+    assert 'NEGOTIATE' in text
+    assert 'I can do it at' not in text
+    assert 'before naming a price' in text and 'carrier review' in text
+    assert '300.00' not in text.split('Broker wording')[1]
 
 
 def test_missing_feasibility_blocks_accept(store):
     conversation = journey(store)
-    for correction in ('target 2.50', 'cpm 1.25', 'minimum 100', 'counter 900'):
+    for correction in ('target 2.50', 'cpm 1.25', 'minimum 100', 'reposition 20',
+                       'counter 900'):
         conversation.handle(1, 1, correction)
     snapshot = store._opening.get(1, 1)
     flow = store._conversation_states['owner']
@@ -318,7 +347,8 @@ def test_missing_feasibility_blocks_accept(store):
 
 def test_blocked_availability_declines(store):
     conversation = journey(store, 'availability blocked')
-    for correction in ('target 2.50', 'cpm 1.25', 'minimum 100', 'counter 900'):
+    for correction in ('target 2.50', 'cpm 1.25', 'minimum 100', 'reposition 20',
+                       'counter 900'):
         conversation.handle(1, 1, correction)
     snapshot = store._opening.get(1, 1)
     flow = store._conversation_states['owner']

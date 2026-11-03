@@ -236,7 +236,7 @@ class OpeningSessions:
                 target_all_mile_rpm=snapshot.pricing.target_all_mile_rpm,
                 minimum_job_charge=snapshot.pricing.minimum_job_charge,
                 pricing_source=snapshot.pricing.pricing_source))
-            self._results[self._carrier(user, chat)] = result
+            self._results[self._carrier(user, chat)] = ('opening_bid', result)
             return dict(result)
 
     def evaluate(self, user: int, chat: int, revision: int) -> dict:
@@ -260,8 +260,17 @@ class OpeningSessions:
                 schedule_feasible={'feasible': True, 'blocked': False}.get(
                     snapshot.trip.availability),
                 pricing_source=snapshot.pricing.pricing_source))
-            self._results[self._carrier(user, chat)] = result
+            self._results[self._carrier(user, chat)] = ('offer_evaluation', result)
             return dict(result)
+
+    def last_result(self, user: int, chat: int) -> tuple[str, dict] | None:
+        """Stored (kind, result) for the latest evaluation, if any. No model use."""
+        with self._lock:
+            stored = self._results.get(self._carrier(user, chat))
+            if stored is None:
+                return None
+            kind, result = stored
+            return kind, dict(result)
 
     def decide(self, user: int, chat: int, revision: int) -> tuple[str, dict]:
         """Branch deterministically: known compensation evaluates, else open."""

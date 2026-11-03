@@ -1,0 +1,184 @@
+<!doctype html>
+<html lang="en"><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover"><title>Axle · Opening review</title>
+<script src="https://telegram.org/js/telegram-web-app.js"></script>
+<style>
+:root{color-scheme:dark;--ink:#010e19;--panel:#071823;--cream:#fdfcf6;--cyan:#2ebbe4;--teal:#164050;--pink:#d92b68;--muted:#a9c2cc;--line:#52717e}*{box-sizing:border-box}body{margin:0;background:var(--ink);color:var(--cream);font:16px/1.5 system-ui,sans-serif}main{max-width:600px;margin:auto;padding:18px 16px 40px}header{display:flex;justify-content:space-between;align-items:baseline;padding-bottom:14px;border-bottom:1px solid var(--teal)}.logo{font-size:26px;font-weight:850;letter-spacing:-1px}.logo span{color:var(--cyan)}.tag{color:var(--muted);font-size:12px;text-align:right}.steps{display:flex;gap:6px;list-style:none;padding:0;margin:16px 0 6px}.steps li{flex:1;font-size:11px;color:var(--muted);border-top:2px solid var(--teal);padding-top:6px}.steps li.done{color:var(--cyan);border-color:var(--cyan)}.steps li.now{color:var(--cream);border-color:var(--cream)}.panel{background:var(--panel);border:1px solid var(--teal);border-radius:14px;padding:18px;margin-top:14px}h1{font-size:24px;letter-spacing:-.5px;margin:14px 0 4px}h2{font-size:18px;margin:0 0 10px}p{margin:10px 0;color:#c2d2d9;font-size:14px}.status{display:inline-block;border:1px solid var(--cyan);border-radius:20px;padding:4px 12px;color:var(--cyan);font-size:12px;font-weight:800}.fields{display:grid;gap:12px;margin-top:12px}label{display:block;font-size:13px;color:#c2d2d9}input,select,textarea{font:inherit;font-size:16px;width:100%;background:var(--ink);color:var(--cream);border:1px solid var(--line);border-radius:8px;padding:10px;margin-top:6px}textarea{resize:vertical;min-height:64px}input:focus-visible,select:focus-visible,textarea:focus-visible,button:focus-visible,summary:focus-visible{outline:3px solid #fdad75;outline-offset:2px}button{font:inherit;font-weight:750;border:0;border-radius:9px;background:var(--cyan);color:var(--ink);padding:13px 16px;width:100%;margin-top:14px;cursor:pointer}button.secondary{background:transparent;color:var(--cyan);border:1px solid var(--teal)}button:disabled{opacity:.55;cursor:wait}.row{display:flex;justify-content:space-between;gap:10px;padding:9px 0;border-bottom:1px solid var(--teal);font-size:14px}.row:last-child{border-bottom:0}.row .k{color:var(--muted)}.row .v{text-align:right;overflow-wrap:anywhere}.badge{display:inline-block;font-size:10px;font-weight:800;letter-spacing:.5px;border:1px solid var(--line);border-radius:10px;padding:1px 7px;margin-left:6px;color:var(--muted);vertical-align:middle}.badge.src-screenshot{color:var(--cyan);border-color:var(--cyan)}.badge.src-carrier{color:var(--cream);border-color:var(--cream)}.badge.src-profile{color:#fdad75;border-color:#fdad75}.unknown{color:var(--muted);font-style:italic}.zero{color:var(--cyan);font-weight:700}.notice{background:#102c3b;border-left:3px solid var(--cyan);padding:12px;font-size:13px;line-height:1.5;margin-top:12px}.warn{background:#2c101b;border-left:3px solid var(--pink);padding:12px;font-size:13px;margin-top:12px}#error{display:none;background:#2c101b;border:1px solid var(--pink);border-radius:10px;padding:12px;font-size:14px;margin-top:14px}#error.show{display:block}.metrics{display:grid;grid-template-columns:1fr 1fr 1fr;gap:8px;margin:14px 0}.metric{padding:10px 0;border-top:1px solid var(--teal)}.value{font-size:20px;font-weight:800;display:block}.metric small{font-size:10px;color:var(--muted)}pre.guidance{white-space:pre-wrap;overflow-wrap:anywhere;font-size:13px;color:#c2d2d9;background:var(--ink);border:1px solid var(--teal);border-radius:8px;padding:12px}details{margin-top:12px}summary{cursor:pointer;color:var(--cyan);font-size:14px;padding:8px 0}footer{margin:22px 0;font-size:12px;color:var(--muted);line-height:1.6}.spin{display:inline-block;width:14px;height:14px;border:2px solid var(--teal);border-top-color:var(--cyan);border-radius:50%;animation:sp 1s linear infinite;vertical-align:-2px;margin-right:8px}@keyframes sp{to{transform:rotate(360deg)}}@media(prefers-reduced-motion:reduce){.spin{animation:none}}[hidden]{display:none!important}
+</style>
+<main><header><div class="logo">axle<span>.</span></div><div class="tag">Opening review · owner pilot</div></header>
+<ol class="steps" id="steps" aria-label="Progress"><li data-s="profile">1 · Profile</li><li data-s="photo">2 · Screenshot</li><li data-s="review">3 · Review</li><li data-s="confirmed">4 · Confirm</li><li data-s="decided">5 · Result</li></ol>
+<div id="error" role="alert"></div>
+<section id="screen-loading" class="panel"><h2><span class="spin" aria-hidden="true"></span>Loading your session…</h2><p>Verifying the Telegram launch and reading the current revision. Nothing is confirmed or spent by opening this app.</p></section>
+<section id="screen-consent" class="panel" hidden><span class="status">CONSENT NEEDED</span><h1>Start in the bot first</h1><p id="consentText">This Mini App works inside your consented bot session. Open the private bot chat, run /start, and choose session or remember — then reopen this app.</p><button id="consentRetry" type="button">Retry</button></section>
+<section id="screen-profile" class="panel" hidden><span class="status">STEP 1 · SESSION PROFILE</span><h1>Confirm your profile</h1><p>These values apply to this session only. They are never guessed: unknown costs stay unknown, and the minimum charge needs an explicit value (or none for zero).</p><form id="profileForm"><div class="fields"><label>All-operating-expense CPM ($/mile)<input name="operating_cpm" inputmode="decimal" placeholder="e.g. 1.25" autocomplete="off"></label><label>Target revenue per all mile ($/mile)<input name="target_all_mile_rpm" inputmode="decimal" placeholder="e.g. 2.50" autocomplete="off"></label><label>Minimum job charge ($ — or “none” for zero)<input name="minimum_job_charge" inputmode="decimal" placeholder="e.g. 100" autocomplete="off" required></label><label>Equipment<input name="equipment" maxlength="200" placeholder="e.g. 26ft box truck" autocomplete="off"></label><label>Operating context<textarea name="operating_context" maxlength="500" placeholder="e.g. solo, no hazmat"></textarea></label></div><button type="submit">Review profile</button></form></section>
+<section id="screen-profile-review" class="panel" hidden><span class="status">STEP 1 · REVIEW PROFILE</span><h1>Check every value</h1><div id="profileReview"></div><button id="profileConfirm" type="button">Confirm profile</button><button id="profileBack" type="button" class="secondary">Edit values</button></section>
+<section id="screen-photo" class="panel" hidden><span class="status">STEP 2 · SCREENSHOT</span><h1>Upload in the bot</h1><p>Send one PNG or JPEG opportunity screenshot in the private bot chat. Extraction runs there; this app will show the draft for review.</p><div id="photoProfile"></div><button id="photoRefresh" type="button" class="secondary">Check for the draft</button></section>
+<section id="screen-review" class="panel" hidden><span class="status" id="reviewStatus">STEP 3 · REVIEW</span><h1 id="reviewTitle">Verify every value</h1><div id="reviewBody"></div><details id="tripBox"><summary>Enter trip inputs and corrections</summary><form id="correctForm"><div class="fields"><label>Deadhead to pickup (miles)<input name="deadhead_miles" inputmode="decimal" autocomplete="off"></label><label>Extra reposition miles (non-overlapping)<input name="reposition_miles" inputmode="decimal" autocomplete="off"></label><label>Expected job duration<input name="duration_note" maxlength="200" autocomplete="off"></label><label>Availability<select name="availability"><option value="">Leave unchanged</option><option value="feasible">Feasible — my own checks pass</option><option value="blocked">Blocked</option><option value="unknown">Unknown</option></select></label><label>Handling / service notes<textarea name="handling_note" maxlength="500"></textarea></label><label>Loaded miles (correct only if wrong)<input name="loaded_miles" inputmode="decimal" autocomplete="off"></label><label>Posted payout $ (correct only if wrong)<input name="payout" inputmode="decimal" autocomplete="off"></label><label>Simulated broker counteroffer $ — rehearsal only, DRAFT<input name="counter" inputmode="decimal" autocomplete="off"></label></div><button type="submit">Apply to a new revision</button></form></details><button id="reviewConfirm" type="button">Confirm this exact revision</button><p>Confirming binds the complete snapshot shown above. Any later edit creates a new revision and needs fresh confirmation.</p></section>
+<section id="screen-confirmed" class="panel" hidden><span class="status">STEP 4 · CONFIRMED</span><h1>Revision confirmed</h1><div id="confirmedBody"></div><div id="confirmedEval"></div><button id="requestBid" type="button">Request opening bid</button><p>Requesting spends one budgeted model attempt for tool selection. Calculations stay deterministic; economics are checkable below.</p></section>
+<section id="screen-evaluating" class="panel" hidden><span class="status">WORKING</span><h1><span class="spin" aria-hidden="true"></span>Selection in progress…</h1><p>The model selects the pricing tool for the confirmed revision. This page refreshes automatically; closing it never spends again.</p></section>
+<section id="screen-decided" class="panel" hidden><span class="status" id="decisionStatus">RESULT</span><h1 id="decisionTitle">Result</h1><div id="decisionBody"></div><details id="counterBox"><summary>Enter a simulated broker counteroffer (rehearsal only)</summary><form id="counterForm"><div class="fields"><label>Simulated counteroffer $ — DRAFT, never sent<input name="counter" inputmode="decimal" autocomplete="off" required></label></div><button type="submit">Apply counteroffer as a new revision</button></form></details><button id="decidedRefresh" type="button" class="secondary">Refresh</button></section>
+<footer>DRAFT — NOT SENT. Internal review only. Confirming or requesting never books a load, contacts a broker, or submits anything externally. Unknowns stay unknown; explicit zeros are labeled.</footer></main>
+<script>
+'use strict';
+const el = id => document.getElementById(id);
+const tg = (window.Telegram && window.Telegram.WebApp) || null;
+const initData = (tg && tg.initData) || '';
+if (tg) { try { tg.ready(); tg.expand(); } catch (e) {} }
+let current = null, busy = false, pollTimer = null;
+const rid = () => (crypto.randomUUID ? crypto.randomUUID().replace(/-/g, '') : [...crypto.getRandomValues(new Uint8Array(16))].map(b => b.toString(16).padStart(2, '0')).join(''));
+function showError(message) { const box = el('error'); box.textContent = message || 'Something went wrong.'; box.classList.add('show'); }
+function clearError() { el('error').classList.remove('show'); }
+function setBusy(value) { busy = value; document.querySelectorAll('button,input,select,textarea').forEach(c => { c.disabled = value; }); }
+function showOnly(id) { for (const s of document.querySelectorAll('main > section')) s.hidden = s.id !== id; }
+function stepsTo(stage) {
+  const order = ['profile', 'photo', 'review', 'confirmed', 'decided'];
+  const rank = { profile: 0, photo: 1, review: 2, confirmed: 3, evaluating: 3, decided: 4 };
+  const at = rank[stage] === undefined ? 0 : rank[stage];
+  document.querySelectorAll('#steps li').forEach((li, i) => {
+    li.classList.toggle('done', i < at || (stage === 'decided' && i <= at));
+    li.classList.toggle('now', i === at && stage !== 'decided');
+  });
+}
+async function api(path, body) {
+  const r = await fetch(path, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ initData, ...body }) });
+  const data = await r.json().catch(() => ({}));
+  if (!r.ok || data.ok === false) {
+    const err = new Error((data && data.error) || ('Request failed (' + r.status + ')'));
+    err.status = r.status; err.state = data && data.state;
+    throw err;
+  }
+  return data;
+}
+function esc(value) { return String(value).replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c])); }
+function fieldRow(label, field) {
+  let shown, cls = '';
+  if (!field || field.value === null || field.value === undefined) { shown = 'unknown'; cls = 'unknown'; }
+  else if (field.state === 'explicit_zero') { shown = esc(field.value) + ' (explicit zero)'; cls = 'zero'; }
+  else shown = esc(field.value);
+  const src = field && field.source ? '<span class="badge src-' + esc(String(field.source).split(' ')[0]) + '">' + esc(field.source) + '</span>' : '';
+  return '<div class="row"><span class="k">' + esc(label) + '</span><span class="v ' + cls + '">' + shown + src + '</span></div>';
+}
+function profileRows(p) {
+  if (!p) return '<p>No profile yet.</p>';
+  return fieldRow('Operating CPM', p.operating_cpm) + fieldRow('Expense basis', p.expense_claim)
+    + fieldRow('Target all-mile RPM', p.target_all_mile_rpm) + fieldRow('Minimum job charge', p.minimum_job_charge)
+    + fieldRow('Equipment', p.equipment) + fieldRow('Operating context', p.operating_context);
+}
+function reviewRows(r) {
+  let h = '<h2>Screenshot facts</h2>' + fieldRow('Posted payout $', r.facts.payout) + fieldRow('Loaded miles', r.facts.loaded_miles)
+    + fieldRow('Deadhead miles', r.facts.deadhead_miles) + fieldRow('Weight lbs', r.facts.weight_lbs);
+  h += '<h2>Session pricing</h2>' + fieldRow('Target all-mile RPM', r.pricing.target_all_mile_rpm) + fieldRow('Operating CPM', r.pricing.operating_cpm)
+    + fieldRow('Expense basis', r.pricing.expense_claim) + fieldRow('Minimum job charge', r.pricing.minimum_job_charge)
+    + fieldRow('Reposition miles', r.pricing.reposition_miles);
+  h += '<h2>Trip context</h2>' + fieldRow('Duration', r.trip.duration_note) + fieldRow('Availability', r.trip.availability) + fieldRow('Handling', r.trip.handling_note);
+  h += '<h2>Compensation</h2>' + fieldRow('Owner counteroffer $', r.counter_offer) + fieldRow('Evaluated compensation $', r.evaluated_compensation);
+  if (r.counter_note && r.counter_note.value) h += fieldRow('Counter note', r.counter_note);
+  if (r.issues && r.issues.length) h += '<div class="notice">Unresolved notes:<br>• ' + r.issues.map(esc).join('<br>• ') + '</div>';
+  if (r.mileage_proposals && r.mileage_proposals.length) h += '<div class="notice">Possible pickup-to-delivery interpretation (UNCONFIRMED, from note): ' + r.mileage_proposals.map(esc).join(', ') + ' — confirm explicitly or correct.</div>';
+  return h;
+}
+function money(v) { return v === null || v === undefined ? 'unknown' : '$' + v; }
+function resultCard(kind, r) {
+  let h = '';
+  if (kind === 'opening_bid') {
+    el('decisionStatus').textContent = r.opening_bid !== null ? 'PRELIMINARY OPENING' : 'PRICING REVIEW';
+    el('decisionTitle').textContent = r.opening_bid !== null ? 'Opening bid: $' + r.opening_bid : 'Review needed before pricing';
+    h = '<div class="metrics"><div class="metric"><span class="value">' + esc(r.total_miles || '?') + '</span><small>TOTAL MILES</small></div>'
+      + '<div class="metric"><span class="value">' + money(r.estimated_operating_cost) + '</span><small>EST. OPERATING COST</small></div>'
+      + '<div class="metric"><span class="value">' + money(r.target_revenue) + '</span><small>TARGET REVENUE</small></div></div>';
+    if (r.opening_bid !== null) h += fieldRow('Opening bid $', { value: r.opening_bid, state: 'known' }) + fieldRow('Est. operating surplus $', { value: r.estimated_operating_surplus, state: 'known' });
+    else h += '<div class="warn">Missing: ' + esc((r.missing || []).join(', ') || 'review required') + (r.pricing_issue ? '<br>' + esc(r.pricing_issue) : '') + '</div>';
+  } else {
+    const titles = { ACCEPT: 'The supplied checks pass.', NEGOTIATE: 'The current terms need work.', DECLINE: 'This schedule does not work.', NEED_MORE_INFORMATION: 'Add facts before deciding.' };
+    el('decisionStatus').textContent = r.decision.replace(/_/g, ' ');
+    el('decisionTitle').textContent = titles[r.decision] || r.decision;
+    h = '<div class="metrics"><div class="metric"><span class="value">' + money(r.compensation) + '</span><small>COMPENSATION</small></div>'
+      + '<div class="metric"><span class="value">' + esc(r.total_miles || '?') + '</span><small>TOTAL MILES</small></div>'
+      + '<div class="metric"><span class="value">' + (r.revenue_gap_to_target === null ? '—' : '$' + r.revenue_gap_to_target) + '</span><small>GAP TO TARGET</small></div></div>';
+    h += fieldRow('Compensation source', { value: r.compensation_source, state: 'known' }) + fieldRow('Est. operating cost $', { value: r.estimated_operating_cost, state: r.estimated_operating_cost === null ? 'unknown' : 'known' })
+      + fieldRow('Target revenue $', { value: r.target_revenue, state: r.target_revenue === null ? 'unknown' : 'known' });
+    if (r.estimated_operating_surplus !== null && r.estimated_operating_surplus !== undefined) h += fieldRow('Est. operating surplus $', { value: r.estimated_operating_surplus, state: 'known' });
+    if (r.missing_information && r.missing_information.length) h += '<div class="warn">Missing: ' + r.missing_information.map(esc).join(', ') + '</div>';
+    h += '<div class="notice">Limits: stops, hours-of-service, routing and market conditions are not modeled; equipment match and schedule are carrier-supplied, not verified. A decision here is never a booking.</div>';
+  }
+  return h;
+}
+function render(state) {
+  current = state;
+  stepsTo(state.stage);
+  stopPoll();
+  if (state.stage === 'profile') {
+    if (state.staged_profile) { el('profileReview').innerHTML = profileRows(state.staged_profile); showOnly('screen-profile-review'); }
+    else showOnly('screen-profile');
+  } else if (state.stage === 'photo') {
+    el('photoProfile').innerHTML = profileRows(state.profile);
+    showOnly('screen-photo');
+    poll(4000);
+  } else if (state.stage === 'review') {
+    el('reviewStatus').textContent = 'STEP 3 · REVIEW REVISION ' + state.review.revision;
+    el('reviewBody').innerHTML = reviewRows(state.review);
+    el('reviewConfirm').textContent = 'Confirm exact revision ' + state.review.revision;
+    showOnly('screen-review');
+  } else if (state.stage === 'confirmed') {
+    el('confirmedBody').innerHTML = reviewRows(state.review);
+    el('confirmedEval').innerHTML = state.evaluation ? '<div class="warn">Last evaluation: ' + esc(state.evaluation.state) + '. No automatic retry; requesting again queues one new budgeted attempt.</div>' : '';
+    showOnly('screen-confirmed');
+  } else if (state.stage === 'evaluating') {
+    showOnly('screen-evaluating');
+    poll(2500);
+  } else if (state.stage === 'decided') {
+    el('decisionBody').innerHTML = '<div class="notice">' + esc(state.result.notice || 'DRAFT — NOT SENT.') + '</div>' + resultCard(state.evaluation_kind, state.result)
+      + (state.guidance ? '<h2>Negotiation guidance</h2><pre class="guidance">' + esc(state.guidance) + '</pre>' : '');
+    showOnly('screen-decided');
+  }
+}
+function stopPoll() { if (pollTimer) { clearTimeout(pollTimer); pollTimer = null; } }
+function poll(ms) { stopPoll(); pollTimer = setTimeout(refresh, ms); }
+async function refresh() {
+  if (busy) return;
+  clearError(); setBusy(true);
+  try {
+    const data = await api('/miniapp/api/state', {});
+    render(data.state);
+  } catch (e) {
+    if (e.status === 403) { stopPoll(); showOnly('screen-consent'); if (e.message) el('consentText').textContent = e.message + ' Then reopen this app.'; }
+    else showError(e.message);
+  } finally { setBusy(false); }
+}
+function formFields(form) {
+  const out = {};
+  for (const [k, v] of new FormData(form)) { const t = (v || '').trim(); if (t) out[k] = t; }
+  return out;
+}
+async function mutate(path, body, keepForm) {
+  clearError(); setBusy(true);
+  try {
+    const data = await api(path, body);
+    render(data.state);
+    return true;
+  } catch (e) {
+    if (e.state) render(e.state);
+    showError(e.message + (e.status === 409 ? ' Your entries above are preserved.' : ' Your entries above are preserved.'));
+    return false;
+  } finally { setBusy(false); }
+}
+el('profileForm').addEventListener('submit', e => { e.preventDefault(); if (!busy) mutate('/miniapp/api/profile', { request_id: rid(), fields: formFields(e.target) }); });
+el('profileBack').addEventListener('click', () => showOnly('screen-profile'));
+el('profileConfirm').addEventListener('click', () => { if (!busy) mutate('/miniapp/api/profile/confirm', { request_id: rid() }); });
+el('photoRefresh').addEventListener('click', refresh);
+el('consentRetry').addEventListener('click', () => { showOnly('screen-loading'); refresh(); });
+el('correctForm').addEventListener('submit', e => {
+  e.preventDefault(); if (busy || !current || !current.review) return;
+  const fields = formFields(e.target);
+  if (!Object.keys(fields).length) { showError('Enter at least one value.'); return; }
+  mutate('/miniapp/api/correct', { request_id: rid(), expected_revision: current.review.revision, fields }).then(ok => { if (ok) e.target.reset(); });
+});
+el('reviewConfirm').addEventListener('click', () => { if (!busy && current && current.review) mutate('/miniapp/api/confirm', { request_id: rid(), revision: current.review.revision }); });
+el('requestBid').addEventListener('click', () => { if (!busy && current && current.review) mutate('/miniapp/api/evaluate', { request_id: rid(), revision: current.review.revision }); });
+el('counterForm').addEventListener('submit', e => {
+  e.preventDefault(); if (busy || !current || !current.review) return;
+  mutate('/miniapp/api/correct', { request_id: rid(), expected_revision: current.review.revision, fields: formFields(e.target) }).then(ok => { if (ok) e.target.reset(); });
+});
+el('decidedRefresh').addEventListener('click', refresh);
+if (!initData) { showOnly('screen-consent'); el('consentText').textContent = 'No Telegram launch data found. Open this app from the bot button inside Telegram.'; }
+else refresh();
+</script></html>

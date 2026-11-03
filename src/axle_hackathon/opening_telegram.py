@@ -243,39 +243,7 @@ class OpeningConversation:
         except PermissionError:
             self._flows.pop(carrier, None)
             raise
-        pairs = parse_fields(text, PROFILE_FIELDS)
-        values = dict(operating_cpm=None, expense_claim=None, target_all_mile_rpm=None,
-                      minimum_job_charge=None, equipment=None, operating_context=None)
-        for name, raw in pairs.items():
-            parsed = _unknown(raw)
-            if name == 'minimum_job_charge':
-                if parsed is None:
-                    raise ValueError('Minimum charge must be supplied, including explicit zero')
-                values[name] = Decimal(0) if parsed.lower() == 'none' else _decimal(
-                    _number(parsed, name=name), name=name, low=Decimal(0),
-                    high=Decimal(1000000), allow_zero=True)
-            elif name == 'operating_cpm':
-                if parsed is None:
-                    continue
-                if parsed.lower() == 'itemized':
-                    raise ValueError('Itemized costs need explicit normalization first; '
-                                     'pricing stays unavailable')
-                values[name] = _decimal(_number(parsed, name=name), name=name,
-                                        low=Decimal(0), high=Decimal(1000), allow_zero=True)
-                values['expense_claim'] = 'all_operating_expenses'
-            elif name == 'target_all_mile_rpm':
-                if parsed is not None:
-                    values[name] = _decimal(_number(parsed, name=name), name=name,
-                                            low=Decimal(0), high=Decimal(1000), allow_zero=False)
-            else:
-                if parsed is not None:
-                    cleaned = parsed.strip()[:500 if name == 'operating_context' else 200]
-                    if not cleaned:
-                        raise ValueError(f'Invalid {name}')
-                    values[name] = cleaned
-        if values['minimum_job_charge'] is None:
-            raise ValueError('Minimum charge must be supplied, including explicit zero')
-        profile = OpeningProfile.model_validate(values)
+        profile = validate_profile_pairs(parse_fields(text, PROFILE_FIELDS))
         flow['profile_values'] = profile
         flow['step'] = 'profile_review'
         flow['nonce'] = token_urlsafe(12)
@@ -374,108 +342,7 @@ class OpeningConversation:
                             + '\n' + QUESTIONS)
 
     def _apply_pairs(self, user, chat, snapshot, pairs):
-        facts = snapshot.draft.facts.model_dump()
-        pricing = snapshot.pricing.model_dump()
-        trip = snapshot.trip.model_dump()
-        offer, note = snapshot.counter_offer, snapshot.counter_note
-        issues = list(snapshot.draft.issues)
-        sources = dict(snapshot.sources)
-        marked, weight_placeholder = set(), False
-        for name in ('equipment', 'operating_context'):
-            if name not in pairs:
-                continue
-            try:
-                current = self.opening.get_profile(user, chat)
-            except KeyError:
-                current = OpeningProfile()
-            data = current.model_dump()
-            parsed = _unknown(pairs[name])
-            data[name] = None if parsed is None else parsed.strip()[:500 if name == 'operating_context' else 200] or None
-            if parsed is not None and data[name] is None:
-                raise ValueError(f'Invalid {name}')
-            self.opening.set_profile(user, chat, OpeningProfile.model_validate(data))
-        for name, raw in pairs.items():
-            if name in ('equipment', 'operating_context'):
-                continue
-            parsed = _unknown(raw)
-            if name == 'counter':
-                stripped = raw.strip()
-                if stripped.lower() in ('none', 'unknown'):
-                    offer, note = None, None
-                elif re.match(r'^[\d$.,\s-]', stripped):
-                    offer = _decimal(_number(stripped, name=name), name=name,
-                                     low=Decimal(0), high=Decimal(1000000), allow_zero=True)
-                else:
-                    note = stripped[:200] or None
-                    if note is None:
-                        raise ValueError('Invalid counter')
-            elif name in ('duration_note', 'handling_note'):
-                limit = 200 if name == 'duration_note' else 500
-                trip[name] = None if parsed is None else parsed.strip()[:limit] or None
-                if parsed is not None and trip[name] is None:
-                    raise ValueError(f'Invalid {name}')
-            elif name == 'availability':
-                if parsed is None:
-                    trip[name] = 'unknown'
-                elif parsed.lower() not in ('feasible', 'blocked', 'unknown'):
-                    raise ValueError('Availability must be feasible, blocked, or unknown')
-                else:
-                    trip[name] = parsed.lower()
-            elif name in facts:
-                marked.add(name)
-                if parsed is None:
-                    facts[name] = None
-                else:
-                    bounds = {'payout': (0, 1000000, True), 'loaded_miles': (0, 100000, False),
-                              'deadhead_miles': (0, 100000, True),
-                              'weight_lbs': (0, 200000, True)}[name]
-                    facts[name] = _decimal(_number(parsed, name=name), name=name,
-                                           low=Decimal(bounds[0]), high=Decimal(bounds[1]),
-                                           allow_zero=bounds[2])
-                    if name == 'weight_lbs' and facts[name] == 0:
-                        facts[name] = None
-                        weight_placeholder = True
-            elif name == 'minimum_job_charge':
-                if parsed is None:
-                    raise ValueError('Minimum charge must be supplied, including explicit zero')
-                pricing[name] = Decimal(0) if parsed.lower() == 'none' else _decimal(
-                    _number(parsed, name=name), name=name, low=Decimal(0),
-                    high=Decimal(1000000), allow_zero=True)
-            elif name == 'operating_cpm':
-                if parsed is None:
-                    pricing[name] = None
-                    pricing['expense_claim'] = None
-                elif parsed.lower() == 'itemized':
-                    raise ValueError('Itemized costs need explicit normalization first; '
-                                     'pricing stays unavailable')
-                else:
-                    pricing[name] = _decimal(_number(parsed, name=name), name=name,
-                                            low=Decimal(0), high=Decimal(1000), allow_zero=True)
-                    pricing['expense_claim'] = 'all_operating_expenses'
-            elif parsed is None:
-                pricing[name] = None
-            else:
-                bounds = {'target_all_mile_rpm': (0, 1000, False),
-                          'reposition_miles': (0, 100000, True)}[name]
-                pricing[name] = _decimal(_number(parsed, name=name), name=name,
-                                         low=Decimal(bounds[0]), high=Decimal(bounds[1]),
-                                         allow_zero=bounds[2])
-            sources[name if name != 'counter' else 'counter_offer'] = 'carrier'
-        if offer is None:
-            sources.pop('counter_offer', None)
-        keywords = {word for name in pairs for word in _RETIRE_KEYWORDS.get(name, ())}
-        issues = [issue for issue in issues
-                  if not any(word in issue.lower() for word in keywords)]
-        if weight_placeholder and len(issues) < 6 and not any(
-                'weight' in issue.lower() for issue in issues):
-            issues.append('Displayed zero weight is a placeholder requiring clarification.')
-        draft = ScreenshotDraft(status='UNCONFIRMED', facts=IntakeFacts.model_validate(facts),
-            evidence={**snapshot.draft.evidence,
-                      **{name: 'carrier correction' for name in marked}},
-            issues=issues)
-        return self.opening.put(user, chat, draft, OpeningPricing.model_validate(pricing),
-            expected_revision=snapshot.revision, trip=OpeningTrip.model_validate(trip),
-            counter_offer=offer, counter_note=note, sources=sources)
+        return apply_pairs_to_snapshot(self.opening, user, chat, snapshot, pairs)
 
     def _advance(self, carrier, step, prompt):
         self._flows[carrier].update(step=step, nonce=token_urlsafe(12))
@@ -485,6 +352,158 @@ class OpeningConversation:
         if save:
             self._flows[carrier]['last_prompt'] = prompt
         return prompt + step_trailer(self._flows[carrier]['step'], self._flows[carrier]['nonce'])
+
+
+def validate_profile_pairs(pairs):
+    """Shared profile validation for bot text and Mini App JSON. Deterministic."""
+    for name in pairs:
+        if name not in PROFILE_FIELDS:
+            raise ValueError(f'Unexpected profile field {name!r}'[:80])
+    values = dict(operating_cpm=None, expense_claim=None, target_all_mile_rpm=None,
+                  minimum_job_charge=None, equipment=None, operating_context=None)
+    for name, raw in pairs.items():
+        if not isinstance(raw, str) or not raw.strip() or len(raw) > 600:
+            raise ValueError(f'Invalid {name}')
+        parsed = _unknown(raw)
+        if name == 'minimum_job_charge':
+            if parsed is None:
+                raise ValueError('Minimum charge must be supplied, including explicit zero')
+            values[name] = Decimal(0) if parsed.lower() == 'none' else _decimal(
+                _number(parsed, name=name), name=name, low=Decimal(0),
+                high=Decimal(1000000), allow_zero=True)
+        elif name == 'operating_cpm':
+            if parsed is None:
+                continue
+            if parsed.lower() == 'itemized':
+                raise ValueError('Itemized costs need explicit normalization first; '
+                                 'pricing stays unavailable')
+            values[name] = _decimal(_number(parsed, name=name), name=name,
+                                    low=Decimal(0), high=Decimal(1000), allow_zero=True)
+            values['expense_claim'] = 'all_operating_expenses'
+        elif name == 'target_all_mile_rpm':
+            if parsed is not None:
+                values[name] = _decimal(_number(parsed, name=name), name=name,
+                                        low=Decimal(0), high=Decimal(1000), allow_zero=False)
+        else:
+            if parsed is not None:
+                cleaned = parsed.strip()[:500 if name == 'operating_context' else 200]
+                if not cleaned:
+                    raise ValueError(f'Invalid {name}')
+                values[name] = cleaned
+    if values['minimum_job_charge'] is None:
+        raise ValueError('Minimum charge must be supplied, including explicit zero')
+    return OpeningProfile.model_validate(values)
+
+
+def apply_pairs_to_snapshot(opening, user, chat, snapshot, pairs):
+    """Shared correction/trip/counteroffer application. Creates one new revision."""
+    for name, raw in pairs.items():
+        if name not in FIELD_LABELS:
+            raise ValueError(f'Unexpected field {name!r}'[:80])
+        if not isinstance(raw, str) or not raw.strip() or len(raw) > 600:
+            raise ValueError(f'Invalid {name}')
+    facts = snapshot.draft.facts.model_dump()
+    pricing = snapshot.pricing.model_dump()
+    trip = snapshot.trip.model_dump()
+    offer, note = snapshot.counter_offer, snapshot.counter_note
+    issues = list(snapshot.draft.issues)
+    sources = dict(snapshot.sources)
+    marked, weight_placeholder = set(), False
+    for name in ('equipment', 'operating_context'):
+        if name not in pairs:
+            continue
+        try:
+            current = opening.get_profile(user, chat)
+        except KeyError:
+            current = OpeningProfile()
+        data = current.model_dump()
+        parsed = _unknown(pairs[name])
+        data[name] = None if parsed is None else parsed.strip()[:500 if name == 'operating_context' else 200] or None
+        if parsed is not None and data[name] is None:
+            raise ValueError(f'Invalid {name}')
+        opening.set_profile(user, chat, OpeningProfile.model_validate(data))
+    for name, raw in pairs.items():
+        if name in ('equipment', 'operating_context'):
+            continue
+        parsed = _unknown(raw)
+        if name == 'counter':
+            stripped = raw.strip()
+            if stripped.lower() in ('none', 'unknown'):
+                offer, note = None, None
+            elif re.match(r'^[\d$.,\s-]', stripped):
+                offer = _decimal(_number(stripped, name=name), name=name,
+                                 low=Decimal(0), high=Decimal(1000000), allow_zero=True)
+            else:
+                note = stripped[:200] or None
+                if note is None:
+                    raise ValueError('Invalid counter')
+        elif name in ('duration_note', 'handling_note'):
+            limit = 200 if name == 'duration_note' else 500
+            trip[name] = None if parsed is None else parsed.strip()[:limit] or None
+            if parsed is not None and trip[name] is None:
+                raise ValueError(f'Invalid {name}')
+        elif name == 'availability':
+            if parsed is None:
+                trip[name] = 'unknown'
+            elif parsed.lower() not in ('feasible', 'blocked', 'unknown'):
+                raise ValueError('Availability must be feasible, blocked, or unknown')
+            else:
+                trip[name] = parsed.lower()
+        elif name in facts:
+            marked.add(name)
+            if parsed is None:
+                facts[name] = None
+            else:
+                bounds = {'payout': (0, 1000000, True), 'loaded_miles': (0, 100000, False),
+                          'deadhead_miles': (0, 100000, True),
+                          'weight_lbs': (0, 200000, True)}[name]
+                facts[name] = _decimal(_number(parsed, name=name), name=name,
+                                       low=Decimal(bounds[0]), high=Decimal(bounds[1]),
+                                       allow_zero=bounds[2])
+                if name == 'weight_lbs' and facts[name] == 0:
+                    facts[name] = None
+                    weight_placeholder = True
+        elif name == 'minimum_job_charge':
+            if parsed is None:
+                raise ValueError('Minimum charge must be supplied, including explicit zero')
+            pricing[name] = Decimal(0) if parsed.lower() == 'none' else _decimal(
+                _number(parsed, name=name), name=name, low=Decimal(0),
+                high=Decimal(1000000), allow_zero=True)
+        elif name == 'operating_cpm':
+            if parsed is None:
+                pricing[name] = None
+                pricing['expense_claim'] = None
+            elif parsed.lower() == 'itemized':
+                raise ValueError('Itemized costs need explicit normalization first; '
+                                 'pricing stays unavailable')
+            else:
+                pricing[name] = _decimal(_number(parsed, name=name), name=name,
+                                        low=Decimal(0), high=Decimal(1000), allow_zero=True)
+                pricing['expense_claim'] = 'all_operating_expenses'
+        elif parsed is None:
+            pricing[name] = None
+        else:
+            bounds = {'target_all_mile_rpm': (0, 1000, False),
+                      'reposition_miles': (0, 100000, True)}[name]
+            pricing[name] = _decimal(_number(parsed, name=name), name=name,
+                                     low=Decimal(bounds[0]), high=Decimal(bounds[1]),
+                                     allow_zero=bounds[2])
+        sources[name if name != 'counter' else 'counter_offer'] = 'carrier'
+    if offer is None:
+        sources.pop('counter_offer', None)
+    keywords = {word for name in pairs for word in _RETIRE_KEYWORDS.get(name, ())}
+    issues = [issue for issue in issues
+              if not any(word in issue.lower() for word in keywords)]
+    if weight_placeholder and len(issues) < 6 and not any(
+            'weight' in issue.lower() for issue in issues):
+        issues.append('Displayed zero weight is a placeholder requiring clarification.')
+    draft = ScreenshotDraft(status='UNCONFIRMED', facts=IntakeFacts.model_validate(facts),
+        evidence={**snapshot.draft.evidence,
+                  **{name: 'carrier correction' for name in marked}},
+        issues=issues)
+    return opening.put(user, chat, draft, OpeningPricing.model_validate(pricing),
+        expected_revision=snapshot.revision, trip=OpeningTrip.model_validate(trip),
+        counter_offer=offer, counter_note=note, sources=sources)
 
 
 def step_trailer(step, nonce):
@@ -508,7 +527,8 @@ def step_trailer(step, nonce):
     return ''
 
 
-def create_opening_app(inbox, *, webhook_secret: str, allowed_host: str, conversation=None, send=None):
+def create_opening_app(inbox, *, webhook_secret: str, allowed_host: str, conversation=None, send=None,
+                       miniapp_bot_token: str | None = None, miniapp_button=None):
     if not re.fullmatch(r'[A-Za-z0-9_-]{32,256}', webhook_secret):
         raise ValueError('Explicit webhook secret required')
     if not _is_valid_hostname(allowed_host):
@@ -663,6 +683,55 @@ def create_opening_app(inbox, *, webhook_secret: str, allowed_host: str, convers
                     except Exception:
                         pass
                 return reply(200, 'queued' if accepted else 'duplicate')
+            if text == '/app':
+                if (conversation is None or conversation.inbox is not inbox
+                        or miniapp_button is None):
+                    return reply(503, 'unavailable')
+                if not flow_slots.acquire(blocking=False):
+                    return reply(503, 'unavailable')
+                try:
+                    with inbox._lock:
+                        carrier = inbox._carrier(user, chat)
+                        flow = inbox._conversation_states.get(carrier)
+                        token = None
+                        if flow is not None and flow['step'] != 'memory':
+                            token = flow['token']
+                        else:
+                            access = inbox._active.get(carrier)
+                            token = access.token if access is not None else None
+                        if token is None:
+                            raise PermissionError()
+                        inbox._access(user, chat, token)
+                        if inbox.duplicate_update(user, chat, data['update_id'], 'flow'):
+                            return reply(200, 'duplicate')
+                        if inbox.stale_message(user, chat, message_id):
+                            return reply(200, 'stale')
+                        claim = inbox.begin_flow(
+                            user, chat, data['update_id'], message_id=message_id)
+                        if claim is None:
+                            return reply(200, 'duplicate')
+                    def app_guard():
+                        with inbox._lock:
+                            inbox._access(user, chat, token)
+                            inbox.start_delivery(user, chat, data['update_id'], claim)
+                    try:
+                        await asyncio.to_thread(delivery.send, chat,
+                            'Open the Axle review app for guided entry and confirmation. '
+                            'The text conversation keeps working.',
+                            app_guard,
+                            lambda c, t: miniapp_button(c, t, label='Open Axle review'))
+                        inbox.finish(user, chat, data['update_id'], claim, success=True)
+                    except (Exception, asyncio.CancelledError) as exc:
+                        try:
+                            inbox.finish(user, chat, data['update_id'], claim, success=False)
+                        except Exception:
+                            pass
+                        if isinstance(exc, asyncio.CancelledError):
+                            raise
+                        return reply(503, 'unavailable')
+                    return reply(200, 'processed')
+                finally:
+                    flow_slots.release()
             if text == '/price':
                 if conversation is None or conversation.inbox is not inbox:
                     return reply(503, 'unavailable')
@@ -743,6 +812,10 @@ def create_opening_app(inbox, *, webhook_secret: str, allowed_host: str, convers
         except Exception:
             return reply(503, 'unavailable')
 
+    if miniapp_bot_token is not None:
+        from .opening_miniapp import mount_miniapp
+        mount_miniapp(app, inbox, bot_token=miniapp_bot_token, allowed_host=allowed_host)
+
     return app
 
 
@@ -819,12 +892,26 @@ def negotiation_guidance(kind, result):
                      'handling needs and payment terms. ACCEPT is not a booking.')
     elif decision == 'NEGOTIATE':
         lines.append(f"Gap to target revenue: ${result['revenue_gap_to_target']}.")
-        lines.append('Ask at or above the target revenue; do not concede below operating '
-                     'cost or the confirmed minimum.')
-        lines.append('Broker wording (DRAFT — NOT SENT; no internal costs):')
-        lines.append(f'"Thanks — at the current offer this one does not work for me. '
-                     f'I can do it at ${result["target_revenue"]}. Can you confirm commodity, '
-                     'weight, loading appointment and any accessorial needs?"')
+        # A named ask must clear target, minimum and operating cost together.
+        # NEGOTIATE implies complete inputs, so all three figures are known.
+        ask = max(Decimal(result['target_revenue']), Decimal(result['minimum_job_charge']))
+        if ask > Decimal(result['estimated_operating_cost']):
+            ask_text = f'{ask:.2f}'
+            lines.append(f'Ask at or above ${ask_text}; do not concede below operating '
+                         'cost or the confirmed minimum.')
+            lines.append('Broker wording (DRAFT — NOT SENT; no internal costs, no confirmed floor):')
+            lines.append(f'"Thanks — at the current offer this one does not work for me. '
+                         f'I can do it at ${ask_text}. Can you confirm commodity, '
+                         'weight, loading appointment and any accessorial needs?"')
+        else:
+            lines.append('No numeric ask follows from the confirmed inputs: clearing the '
+                         'target and minimum together does not exceed operating cost. '
+                         'Request carrier review; revised miles, service needs or pricing '
+                         'may change the picture before any broker reply.')
+            lines.append('Broker wording (DRAFT — NOT SENT; no internal costs, no confirmed floor):')
+            lines.append('"Thanks — I need to review the details before naming a price. '
+                         'Can you confirm commodity, weight, loading appointment and any '
+                         'accessorial needs?"')
     elif decision == 'DECLINE':
         lines.append('Availability is confirmed blocked. No price changes that decision; '
                      'only a schedule change with a fresh revision can.')

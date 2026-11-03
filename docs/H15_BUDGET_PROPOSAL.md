@@ -15,17 +15,21 @@ may have executed server-side.
 
 ## Requirement
 
-A fresh rehearsal of the fixed journey needs 2 attempts: 1 screenshot
-extraction plus 1 model-selected pricing evaluation. That does not fit the
-1 remaining attempt under the existing cap.
+A fresh rehearsal of the fixed journey needs 2 attempts without a
+counteroffer: 1 screenshot extraction plus 1 model-selected pricing
+evaluation. The full demo with a counteroffer reevaluation needs 3 fresh
+attempts (extraction + selection + counteroffer selection). Neither fits
+the 1 remaining attempt under the existing cap.
 
 ## Options
 
 A. Recommended: one-time reviewed cap raise from 4 to 6 (global and
    carrier), applied as a code change to the launcher constants on a
    reviewed commit that the owner checks out before rehearsal. The same
-   ledger is kept: 3 used + 2 planned = 5 of 6, leaving 1 spare for a
-   single failed attempt. No reset, no refund, no evasion.
+   ledger is kept. Without a counteroffer: 3 used + 2 planned = 5 of 6,
+   leaving 1 spare for a single failed attempt. With a counteroffer
+   reevaluation: 3 used + 3 planned = 6 of 6, leaving no spare; any
+   failure ends the rehearsal. No reset, no refund, no evasion.
 B. Extraction-only rehearsal within the remaining 1 attempt, deferring
    evaluation. Partial verification; the evaluation path stays offline-only.
 C. New database to evade the ledger. Rejected: lifetime accounting exists
