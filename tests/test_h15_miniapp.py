@@ -351,8 +351,8 @@ def test_current_step_magenta_and_expense_display(store, client):
     from pathlib import Path
     page = client.get('/miniapp/').text
     assert '.steps li.done{color:var(--cyan);border-color:var(--cyan)}' in page
-    assert ('.steps li.now{color:var(--pink);border-color:var(--pink);'
-            'text-decoration:underline}') in page
+    assert '.steps li.now{color:var(--pink);border-color:var(--pink)}' in page
+    assert 'text-decoration' not in page
     assert '.steps li{flex:1 1 0;min-width:0;font-size:11px;color:var(--muted)' in page
     shipped_js = Path('src/axle_hackathon/miniapp_app.js').read_text()
     assert "setAttribute('aria-current', 'step')" in shipped_js
