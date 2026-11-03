@@ -90,6 +90,21 @@ def api(client, path, init_data, **body):
     return client.post(f'/miniapp/api/{path}', json={'initData': init_data, **body})
 
 
+def price_post(client, update, message):
+    body = {'update_id': update,
+            'message': {'message_id': message, 'from': {'id': 1, 'is_bot': False},
+                        'chat': {'id': 1, 'type': 'private'}, 'text': '/price'}}
+    return client.post('/telegram/webhook', json=body,
+                       headers={'x-telegram-bot-api-secret-token': SECRET})
+
+
+def bot_confirm_current(conversation):
+    conversation.handle(1, 1, '/refresh')
+    conversation.handle(1, 1, 'skip')
+    flow = conversation.inbox._conversation_states['owner']
+    conversation.handle(1, 1, f"/confirm {flow['nonce']}")
+
+
 def test_initdata_valid_and_reused_across_requests(store, client):
     consent(store)
     data = launch()
@@ -538,6 +553,90 @@ def test_concurrent_evaluate_queues_once(store, client):
     assert first.status_code == 200 and second.status_code == 200
     assert len(evaluation_rows(store)) == 1
     assert first.json()['evaluation']['update_id'] == second.json()['evaluation']['update_id']
+
+
+def test_miniapp_then_bot_price_queues_once(store, client):
+    conversation = consent(store)
+    data = reviewed(client, store)
+    bot_confirm_current(conversation)
+    first = api(client, 'evaluate', data, request_id=rid(), revision=2)
+    assert first.json()['evaluation']['state'] == 'pending'
+    assert price_post(client, 90, 90).json() == {'status': 'duplicate'}
+    assert len(evaluation_rows(store)) == 1
+    tick_opening(store)
+    assert attempts_used(store) == 2
+
+
+def test_bot_price_then_miniapp_queues_once(store, client):
+    conversation = consent(store)
+    data = reviewed(client, store)
+    bot_confirm_current(conversation)
+    assert price_post(client, 90, 90).json() == {'status': 'queued'}
+    again = api(client, 'evaluate', data, request_id=rid(), revision=2)
+    assert again.json()['evaluation'] == {'state': 'pending', 'update_id': 90}
+    assert len(evaluation_rows(store)) == 1
+    tick_opening(store)
+    assert attempts_used(store) == 2
+
+
+def test_repeated_and_concurrent_bot_price_queues_once(store, client):
+    conversation = consent(store)
+    data = reviewed(client, store)
+    bot_confirm_current(conversation)
+    assert price_post(client, 90, 90).json() == {'status': 'queued'}
+    assert price_post(client, 91, 91).json() == {'status': 'duplicate'}
+    assert len(evaluation_rows(store)) == 1
+    tick_opening(store)
+    conversation.handle(1, 1, 'target 2.60')
+    flow = store._conversation_states['owner']
+    conversation.handle(1, 1, f"/confirm {flow['nonce']}")
+    # Concurrent race at the shared submit path (webhook ordering would
+    # legitimately stale one of two racing bot messages instead).
+    token = store._active['owner'].token
+
+    def ask(n):
+        return store.submit(1, 1, 100 + n, 'opening', token=token, revision=3)
+
+    with ThreadPoolExecutor(max_workers=2) as pool:
+        assert sorted(pool.map(ask, (0, 1))) == [False, True]
+    assert len(evaluation_rows(store)) == 2
+    tick_opening(store)
+    assert attempts_used(store) == 3
+
+
+def test_concurrent_bot_and_miniapp_queue_once(store, client):
+    conversation = consent(store)
+    data = reviewed(client, store)
+    bot_confirm_current(conversation)
+    with ThreadPoolExecutor(max_workers=2) as pool:
+        bot = pool.submit(price_post, client, 90, 90)
+        app = pool.submit(api, client, 'evaluate', data, request_id=rid(), revision=2)
+        bot_status = bot.result(timeout=10).json()['status']
+        app_body = app.result(timeout=10).json()
+    assert bot_status in ('queued', 'duplicate')
+    assert app_body['evaluation']['state'] == 'pending'
+    rows = evaluation_rows(store)
+    assert len(rows) == 1
+    assert (bot_status == 'queued') == (rows[0][0] == 90)
+    tick_opening(store)
+    assert attempts_used(store) == 2
+
+
+def test_new_confirmed_revision_permits_evaluation(store, client):
+    consent(store)
+    data = confirmed_review(client, store)
+    assert api(client, 'evaluate', data, request_id=rid(), revision=2).status_code == 200
+    tick_opening(store)
+    correct = api(client, 'correct', data, request_id=rid(), expected_revision=2,
+                  fields={'counter': '650'})
+    assert correct.json()['state']['review']['revision'] == 3
+    assert api(client, 'confirm', data, request_id=rid(), revision=3).status_code == 200
+    assert api(client, 'evaluate', data, request_id=rid(), revision=3).status_code == 200
+    assert len(evaluation_rows(store)) == 2
+    tick_opening(store)
+    assert attempts_used(store) == 3
+    final = api(client, 'state', data).json()['state']
+    assert final['result']['decision'] == 'ACCEPT'
 
 
 def test_evaluate_requires_confirmed_current_revision(store, client):

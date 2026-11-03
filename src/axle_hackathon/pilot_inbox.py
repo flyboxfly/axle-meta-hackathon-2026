@@ -163,6 +163,19 @@ class PilotInbox(PilotMemory):
                 generation = sha256(token.encode('ascii')).hexdigest()
             elif token is not None or revision is not None:
                 raise ValueError('Forget does not take evaluation arguments')
+            if action == 'opening':
+                # Shared cross-surface duplicate protection: the same carrier,
+                # session generation and confirmed revision reuses its pending
+                # evaluation instead of queueing (and later spending) another.
+                # New revisions, completed/uncertain rows and rotated sessions
+                # are unaffected; explicit re-requests keep existing policy.
+                pending = self._db.execute(
+                    "SELECT update_id FROM pilot_updates WHERE carrier=? AND action='opening' "
+                    'AND revision=? AND generation=? AND status IN '
+                    "('queued','processing','sending') LIMIT 1",
+                    (carrier, revision, generation)).fetchone()
+                if pending is not None:
+                    return False
             if self._db.execute('SELECT count(*) FROM pilot_updates').fetchone()[0] >= 10000:
                 raise RuntimeError('Inbox capacity reached')
             with self._db:
