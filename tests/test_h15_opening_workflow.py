@@ -117,6 +117,7 @@ def ready_revision(store):
     calls = []
     submit_shot(store, access.token)
     assert worker(store, calls).tick() == 'completed'
+    conversation.handle(1, 1, 'skip')
     return access, conversation, calls
 
 
@@ -314,7 +315,7 @@ def test_no_screenshot_bytes_in_durable_storage(store):
 
 def test_price_reply_is_internal_draft_without_reservation(store):
     access, conversation, _ = ready_revision(store)
-    for correction in ('target 2.50', 'cpm 1.25', 'minimum 100', 'reposition 0'):
+    for correction in ('payout unknown', 'target 2.50', 'cpm 1.25', 'minimum 100', 'reposition 0'):
         conversation.handle(1, 1, correction)
     snapshot = store._opening.get(1, 1)
     store._opening.confirm(1, 1, snapshot.revision)
@@ -383,7 +384,7 @@ def test_expired_consent_blocks_queued_screenshot(tmp_path):
 def test_full_opening_host_rehearsal(tmp_path, monkeypatch):
     raw = jpeg_bytes()
     models, sent, clients = [], [], []
-    delivered, priced = Event(), Event()
+    delivered, priced, accepted = Event(), Event(), Event()
     def handle(request):
         if request.url.host == 'api.meta.ai':
             payload = json.loads(request.content)
@@ -411,8 +412,10 @@ def test_full_opening_host_rehearsal(tmp_path, monkeypatch):
         sent.append(text)
         if 'UNCONFIRMED screenshot draft' in text:
             delivered.set()
-        if 'Preliminary opening price' in text:
+        if 'NEGOTIATE' in text:
             priced.set()
+        if ': ACCEPT' in text:
+            accepted.set()
         return response(200, json_value={'ok': True, 'result': {
             'message_id': len(sent), 'chat': {'id': 1, 'type': 'private'}}})
     real_client = factory.create_http_client
@@ -441,30 +444,35 @@ def test_full_opening_host_rehearsal(tmp_path, monkeypatch):
                 return sent[-1].split('\nStep: ')[1].split('\n')[0]
             assert command('/start', 1) == 'processed'
             assert command(f'/reply {nonce()} session', 2) == 'processed'
+            assert command('cpm 1.25; target 2.50; minimum 100; equipment 26ft box truck', 3) == 'processed'
+            assert command(f"/confirm {nonce()}", 4) == 'processed'
             photo = [dict(file_id='file-1', file_unique_id='unique-1', file_size=len(raw))]
-            assert post(dict(update_id=3, message=dict(message_id=3,
+            assert post(dict(update_id=5, message=dict(message_id=5,
                 **{'from': dict(id=1, is_bot=False)},
-                chat=dict(id=1, type='private'), photo=photo)), 3) == 'queued'
-            assert post(dict(update_id=3, message=dict(message_id=3,
+                chat=dict(id=1, type='private'), photo=photo)), 5) == 'queued'
+            assert post(dict(update_id=5, message=dict(message_id=5,
                 **{'from': dict(id=1, is_bot=False)},
-                chat=dict(id=1, type='private'), photo=photo)), 3) == 'duplicate'
+                chat=dict(id=1, type='private'), photo=photo)), 5) == 'duplicate'
             assert delivered.wait(10)
-            assert command('target 2.50', 4) == 'processed'
-            assert command('cpm 1.25', 5) == 'processed'
-            assert command('minimum 100', 6) == 'processed'
-            assert command('reposition 20', 7) == 'processed'
-            assert command(f"/confirm {nonce()}", 8) == 'processed'
-            assert command('/price', 9) == 'queued'
+            assert command('deadhead 40\nreposition 20\nduration 6 hours\navailability feasible\nhandling liftgate required', 6) == 'processed'
+            assert command(f"/confirm {nonce()}", 7) == 'processed'
+            assert command('/price', 8) == 'queued'
             assert priced.wait(10)
-            assert command('/price', 9) == 'duplicate'
-            assert any('Opening bid: $600.00' in text for text in sent)
+            assert command('/price', 8) == 'duplicate'
+            assert any('NEGOTIATE' in text for text in sent)
+            assert command('counter 650', 9) == 'processed'
+            assert command(f"/confirm {nonce()}", 10) == 'processed'
+            assert command('/price', 11) == 'queued'
+            assert accepted.wait(10)
+            assert any(': ACCEPT' in text for text in sent)
             assert all('synthetic' not in text.lower() for text in sent)
             assert all('invented-key' not in text and TOKEN not in text for text in sent)
-            assert command('/forget', 10) == 'queued'
+            assert all('DRAFT — NOT SENT' in text for text in sent if 'Preliminary opening price' in text or 'Offer evaluation' in text)
+            assert command('/forget', 12) == 'queued'
             assert not host.owner.inbox._active
             total = host.owner.inbox._db.execute('SELECT SUM(attempts) FROM pilot_budget').fetchone()[0]
-            assert total == 2
-        assert models == [False, True]
+            assert total == 3
+        assert models == [False, True, True]
     finally:
         host.owner.close(timeout=5)
     assert all(host.last_shutdown.values())
@@ -888,12 +896,15 @@ def test_failure_hint_lifecycle_over_webhook(store):
         assert command('/start', 1) == 'processed'
         nonce = sent[-1].split('\nStep: ')[1].split('\n')[0]
         assert command(f'/reply {nonce} session', 2) == 'processed'
-        assert photo(3) == 'queued'
-        assert worker.tick() == 'uncertain'
-        assert command('/refresh', 4) == 'processed'
-        assert 'not processed' in sent[-1]
+        assert command('cpm 1.25; target 2.50; minimum 100', 3) == 'processed'
+        nonce = sent[-1].split('\nStep: ')[1].split('\n')[0]
+        assert command(f'/confirm {nonce}', 4) == 'processed'
         assert photo(5) == 'queued'
+        assert worker.tick() == 'uncertain'
         assert command('/refresh', 6) == 'processed'
+        assert 'not processed' in sent[-1]
+        assert photo(7) == 'queued'
+        assert command('/refresh', 8) == 'processed'
         assert 'not processed' not in sent[-1]
 
 

@@ -11,7 +11,8 @@ from fastapi import FastAPI, Request
 from fastapi.responses import JSONResponse
 
 from .opening_intake import IntakeFacts, ScreenshotDraft, parse_media_update
-from .opening_workflow import OpeningPricing, render_review
+from .opening_workflow import (OpeningPricing, OpeningProfile, OpeningTrip,
+                               render_review)
 from .pilot_delivery import DeliveryPool
 from .pilot_memory import _token_matches
 from .remote_app import _is_valid_hostname
@@ -19,6 +20,15 @@ from .remote_app import _is_valid_hostname
 QUESTIONS = ('Useful next details: cargo commodity and weight confirmation, handling or '
     'equipment needs, loading/unloading appointments, and schedule feasibility. Unknown '
     'schedule allows preliminary pricing but blocks full acceptance.')
+PROFILE_PROMPT = ('Send your carrier profile in one message (one item per line, or separated '
+    'by semicolons). Labels: cpm ($/mile, all operating expenses), target ($/mile revenue), '
+    'minimum (job charge, or none), equipment, context. Example:\n'
+    'cpm 1.25\ntarget 2.50\nminimum 100\nequipment 26ft box truck\ncontext solo, no hazmat')
+TRIP_PROMPT = ('Send trip details in one message, or "skip". Labels: deadhead (miles to pickup), '
+    'reposition (extra miles), duration, availability (feasible, blocked, or unknown), handling. Example:\n'
+    'deadhead 40\nreposition 20\nduration 6 hours\navailability feasible\nhandling liftgate required')
+PHOTO_PROMPT = ('Send one PNG or JPEG screenshot of the opportunity. '
+    'Processing before consent is never performed; /forget withdraws consent.')
 
 
 def _decimal(value, *, name, low, high, allow_zero):
@@ -35,6 +45,92 @@ def _decimal(value, *, name, low, high, allow_zero):
 
 def _unknown(value):
     return None if value.lower() in ('unknown', 'skip') else value
+
+
+_UNITS = ('per mile', '/mi', 'rpm', 'cpm', 'miles', 'mile', 'mi', 'usd', '$',
+          'hours', 'hour', 'hrs', 'hr', 'lbs', 'lb')
+
+
+def _number(value, *, name):
+    """One decimal token with an optional familiar unit. Ambiguity rejected."""
+    cleaned = value.replace('$', '').replace(',', '').strip()
+    lowered = cleaned.lower()
+    for unit in _UNITS:
+        if lowered.endswith(unit):
+            cleaned = cleaned[: -len(unit)].strip()
+            break
+    if not cleaned or any(ch.isspace() for ch in cleaned):
+        raise ValueError(f'Invalid {name}')
+    return cleaned
+
+
+# Canonical field -> accepted labels. Correction messages accept every field;
+# the profile step accepts the pricing/equipment subset only.
+FIELD_LABELS = {
+    'payout': ('payout', 'pay', 'compensation', 'offer'),
+    'loaded_miles': ('loaded', 'loaded miles', 'loaded mi', 'ld'),
+    'deadhead_miles': ('deadhead', 'deadhead miles', 'deadhead mi', 'dh', 'dead head'),
+    'weight_lbs': ('weight', 'weight lbs', 'wt'),
+    'target_all_mile_rpm': ('target', 'target rpm', 'revenue target', 'all-mile rpm', 'all mile rpm'),
+    'operating_cpm': ('cpm', 'operating cpm', 'operating cost', 'all-in cpm', 'all in cpm'),
+    'minimum_job_charge': ('minimum', 'minimum charge', 'min charge', 'min'),
+    'reposition_miles': ('reposition', 'reposition miles', 'reposition mi', 'repo'),
+    'duration_note': ('duration', 'expected duration', 'job duration', 'time'),
+    'availability': ('availability', 'schedule', 'schedule feasibility', 'feasible'),
+    'handling_note': ('handling', 'handling notes', 'service', 'service needs'),
+    'equipment': ('equipment', 'truck', 'vehicle'),
+    'operating_context': ('context', 'operating context', 'about'),
+    'counter': ('counter', 'counteroffer', 'counter offer'),
+}
+PROFILE_FIELDS = ('operating_cpm', 'target_all_mile_rpm', 'minimum_job_charge',
+                  'equipment', 'operating_context')
+
+
+def _label_map(fields):
+    mapping = {}
+    for name in fields:
+        for label in FIELD_LABELS[name]:
+            mapping[label] = name
+    return mapping
+
+
+def parse_fields(text, fields):
+    """Deterministic consolidated parsing. Unknown/duplicate labels rejected."""
+    entries = [chunk.strip() for chunk in re.split(r'[\n;]+', text) if chunk.strip()]
+    if not entries:
+        raise ValueError('Send at least one "label value" pair')
+    if len(entries) > 16:
+        raise ValueError('Too many entries in one message')
+    mapping = _label_map(fields)
+    found = {}
+    for entry in entries[:16]:
+        piece, lowered = entry[:600], entry[:600].lower()
+        best = None
+        for label in mapping:
+            if (lowered == label or lowered.startswith(label + ' ')
+                    or lowered.startswith(label + ':') or lowered.startswith(label + '=')):
+                if best is None or len(label) > len(best):
+                    best = label
+        if best is None:
+            head = piece.split(' ', 1)[0][:40]
+            raise ValueError(f"Unknown label '{head}'; use: " + ', '.join(sorted(mapping)))
+        value = piece[len(best):].lstrip(' :=').strip()
+        if not value:
+            raise ValueError(f"'{best}' needs a value")
+        if mapping[best] in found:
+            raise ValueError(f"Duplicate '{best}'; send each field once")
+        found[mapping[best]] = value
+    return found
+
+
+_RETIRE_KEYWORDS = {
+    'payout': ('payout',), 'loaded_miles': ('loaded',), 'deadhead_miles': ('deadhead',),
+    'weight_lbs': ('weight',), 'target_all_mile_rpm': ('target',),
+    'operating_cpm': ('cpm', 'cost'), 'minimum_job_charge': ('minimum',),
+    'reposition_miles': ('reposition',), 'duration_note': ('duration',),
+    'availability': ('availability', 'feasible', 'schedule'),
+    'handling_note': ('handling', 'service'), 'counter': ('counter',),
+}
 
 
 class OpeningConversation:
@@ -72,10 +168,10 @@ class OpeningConversation:
                 return self._refresh(carrier, flow)
             parts = text.split(' ', 2)
             if len(parts) < 2 or parts[1] != flow['nonce']:
-                # Plain corrections carry no nonce; commands without one are stale.
+                # Plain messages carry no nonce; commands without one are stale.
                 if parts[0].startswith('/'):
                     raise ValueError('Stale conversation step')
-                return self._correct(user, chat, carrier, flow, text)
+                return self._plain(user, chat, carrier, flow, text)
             if flow['step'] != 'memory':
                 try:
                     self.inbox._access(user, chat, flow['token'])
@@ -84,18 +180,20 @@ class OpeningConversation:
                     raise
             command = parts[0]
             value = parts[2] if len(parts) == 3 else ''
-            if command == '/confirm' and flow['step'] == 'review' and not value:
-                self.opening.confirm(user, chat, flow['revision'])
-                flow['nonce'] = token_urlsafe(12)
-                flow['step'] = 'confirmed'
-                return self._prompt(carrier, f'Confirmed opening revision {flow["revision"]}. '
-                    'Use /price for a preliminary opening price, or correct a field. '
-                    'Corrections require fresh confirmation. /forget withdraws consent.')
-            if command == '/edit' and flow['step'] in ('review', 'confirmed') and value:
-                field, _, field_value = value.partition(' ')
-                if not field_value:
-                    raise ValueError('Send edits as /edit NONCE field value')
-                return self._correct(user, chat, carrier, flow, field + ' ' + field_value)
+            if command == '/confirm' and not value:
+                if flow['step'] == 'profile_review':
+                    return self._confirm_profile(user, chat, carrier, flow)
+                if flow['step'] == 'review':
+                    self.opening.confirm(user, chat, flow['revision'])
+                    flow['nonce'] = token_urlsafe(12)
+                    flow['step'] = 'confirmed'
+                    return self._prompt(carrier, f'Confirmed opening revision {flow["revision"]}. '
+                        'Use /price for a preliminary opening price or offer evaluation, '
+                        'or correct a field. Corrections require fresh confirmation. '
+                        '/forget withdraws consent.')
+                raise ValueError('Nothing to confirm at this step')
+            if command == '/edit' and value and flow['step'] in ('trip', 'review', 'confirmed'):
+                return self._apply_message(user, chat, carrier, flow, value)
             if command != '/reply':
                 raise ValueError('Unexpected conversation command')
             if flow['step'] == 'memory':
@@ -105,10 +203,91 @@ class OpeningConversation:
                 access = self.inbox.consent(user, chat, flow['notice'].token, choices[value])
                 flow['token'] = access.token
                 self._flows[carrier] = flow
-                return self._advance(carrier, 'photo',
-                    'Consent recorded. Send one PNG or JPEG screenshot of the opportunity. '
-                    'Processing before consent is never performed; /forget withdraws consent.')
+                return self._advance(carrier, 'profile', 'Consent recorded. ' + PROFILE_PROMPT)
             raise ValueError('Unexpected conversation step')
+
+    def _plain(self, user, chat, carrier, flow, text):
+        step = flow['step']
+        if step in ('profile', 'profile_review'):
+            return self._profile_message(user, chat, carrier, flow, text)
+        if step == 'photo':
+            raise ValueError('Send one PNG or JPEG screenshot of the opportunity first')
+        if step == 'trip':
+            if text.strip().lower() == 'skip':
+                try:
+                    self.inbox._access(user, chat, flow['token'])
+                except PermissionError:
+                    self._flows.pop(carrier, None)
+                    raise
+                snapshot = self.opening.get(user, chat)
+                flow['revision'] = snapshot.revision
+                flow['step'] = 'review'
+                flow['trip_done'] = True
+                flow['nonce'] = token_urlsafe(12)
+                return self._prompt(carrier, render_review(snapshot, self._profile(user, chat))
+                                    + '\n' + QUESTIONS)
+            return self._apply_message(user, chat, carrier, flow, text)
+        if step in ('review', 'confirmed'):
+            return self._correct(user, chat, carrier, flow, text)
+        raise ValueError('Reply to the current step or use /refresh')
+
+    def _profile(self, user, chat):
+        try:
+            return self.opening.get_profile(user, chat)
+        except (KeyError, ValueError):
+            return None
+
+    def _profile_message(self, user, chat, carrier, flow, text):
+        try:
+            self.inbox._access(user, chat, flow['token'])
+        except PermissionError:
+            self._flows.pop(carrier, None)
+            raise
+        pairs = parse_fields(text, PROFILE_FIELDS)
+        values = dict(operating_cpm=None, expense_claim=None, target_all_mile_rpm=None,
+                      minimum_job_charge=None, equipment=None, operating_context=None)
+        for name, raw in pairs.items():
+            parsed = _unknown(raw)
+            if name == 'minimum_job_charge':
+                if parsed is None:
+                    raise ValueError('Minimum charge must be supplied, including explicit zero')
+                values[name] = Decimal(0) if parsed.lower() == 'none' else _decimal(
+                    _number(parsed, name=name), name=name, low=Decimal(0),
+                    high=Decimal(1000000), allow_zero=True)
+            elif name == 'operating_cpm':
+                if parsed is None:
+                    continue
+                if parsed.lower() == 'itemized':
+                    raise ValueError('Itemized costs need explicit normalization first; '
+                                     'pricing stays unavailable')
+                values[name] = _decimal(_number(parsed, name=name), name=name,
+                                        low=Decimal(0), high=Decimal(1000), allow_zero=True)
+                values['expense_claim'] = 'all_operating_expenses'
+            elif name == 'target_all_mile_rpm':
+                if parsed is not None:
+                    values[name] = _decimal(_number(parsed, name=name), name=name,
+                                            low=Decimal(0), high=Decimal(1000), allow_zero=False)
+            else:
+                if parsed is not None:
+                    cleaned = parsed.strip()[:500 if name == 'operating_context' else 200]
+                    if not cleaned:
+                        raise ValueError(f'Invalid {name}')
+                    values[name] = cleaned
+        if values['minimum_job_charge'] is None:
+            raise ValueError('Minimum charge must be supplied, including explicit zero')
+        profile = OpeningProfile.model_validate(values)
+        flow['profile_values'] = profile
+        flow['step'] = 'profile_review'
+        flow['nonce'] = token_urlsafe(12)
+        return self._prompt(carrier, self._render_profile(profile))
+
+    def _confirm_profile(self, user, chat, carrier, flow):
+        profile = flow.get('profile_values')
+        if profile is None:
+            raise ValueError('Send the profile message first')
+        self.opening.set_profile(user, chat, profile)
+        return self._advance(carrier, 'photo',
+            'Profile confirmed and reused for this session. ' + PHOTO_PROMPT)
 
     def _refresh(self, carrier, flow):
         if flow['step'] == 'memory':
@@ -122,19 +301,34 @@ class OpeningConversation:
         except PermissionError:
             self._flows.pop(carrier, None)
             raise
+        notice = flow.pop('screenshot_notice', False)
+        def done(prompt):
+            if notice:
+                prompt += ('\nLast screenshot was not processed; no draft was created and '
+                           'nothing was sent. Send a new PNG or JPEG screenshot, or /forget.')
+            return self._prompt(carrier, prompt, save=not notice)
+        if flow['step'] in ('profile', 'profile_review'):
+            if flow['step'] == 'profile_review' and flow.get('profile_values') is not None:
+                return done(self._render_profile(flow['profile_values']))
+            return done(PROFILE_PROMPT)
         if flow['step'] == 'photo':
             try:
                 snapshot = self.opening.get(user, chat)
             except KeyError:
-                if flow.pop('screenshot_notice', False):
-                    return self._prompt(carrier, flow['last_prompt'] +
-                        '\nLast screenshot was not processed; no draft was created and '
-                        'nothing was sent. Send a new PNG or JPEG screenshot, or /forget.',
-                        save=False)
-                return self._prompt(carrier, flow['last_prompt'])
+                return done(PHOTO_PROMPT)
             flow['revision'] = snapshot.revision
-            flow['step'] = 'review'
-            return self._prompt(carrier, render_review(snapshot) + '\n' + QUESTIONS)
+            if flow.get('trip_done'):
+                flow['step'] = 'review'
+                return done(render_review(snapshot, self._profile(user, chat)) + '\n' + QUESTIONS)
+            flow['step'] = 'trip'
+            return done(render_review(snapshot, self._profile(user, chat)) + '\n' + TRIP_PROMPT)
+        if flow['step'] == 'trip':
+            try:
+                snapshot = self.opening.get(user, chat)
+            except KeyError:
+                flow['step'] = 'photo'
+                return done(PHOTO_PROMPT)
+            return done(render_review(snapshot, self._profile(user, chat)) + '\n' + TRIP_PROMPT)
         snapshot = self.opening.get(user, chat)
         if snapshot.revision != flow.get('revision'):
             flow['revision'] = snapshot.revision
@@ -142,62 +336,111 @@ class OpeningConversation:
         if flow['step'] == 'confirmed' and not snapshot.confirmed:
             flow['step'] = 'review'
         if flow['step'] == 'review':
-            return self._prompt(carrier, render_review(snapshot) + '\n' + QUESTIONS)
-        return self._prompt(carrier, f'Confirmed opening revision {snapshot.revision}. '
-            'Use /price for a preliminary opening price, or correct a field.')
+            return done(render_review(snapshot, self._profile(user, chat)) + '\n' + QUESTIONS)
+        return done(f'Confirmed opening revision {snapshot.revision}. '
+            'Use /price for a preliminary opening price or offer evaluation, or correct a field.')
+
+    def _render_profile(self, profile):
+        def shown(value):
+            return str(value) if value is not None else 'unknown'
+        return ('SESSION PROFILE — review before screenshot upload:\n'
+            f'operating CPM: {shown(profile.operating_cpm)}\n'
+            f'expense claim: {profile.expense_claim or "unknown"}\n'
+            f'target all-mile RPM: {shown(profile.target_all_mile_rpm)}\n'
+            f'minimum job charge: {shown(profile.minimum_job_charge)}\n'
+            f'equipment: {shown(profile.equipment)}\n'
+            f'operating context: {shown(profile.operating_context)}\n'
+            'Use /confirm to confirm this profile, or re-send the profile message.')
 
     def _correct(self, user, chat, carrier, flow, text):
         if flow['step'] not in ('review', 'confirmed'):
             raise ValueError('Send one screenshot first; corrections apply to its draft')
+        return self._apply_message(user, chat, carrier, flow, text)
+
+    def _apply_message(self, user, chat, carrier, flow, text):
         try:
             self.inbox._access(user, chat, flow['token'])
         except PermissionError:
             self._flows.pop(carrier, None)
             raise
-        field, _, value = text.partition(' ')
-        if not value:
-            raise ValueError('Send corrections as "field value", e.g. "target 2.10"')
+        pairs = parse_fields(text, tuple(FIELD_LABELS))
         snapshot = self.opening.get(user, chat)
+        updated = self._apply_pairs(user, chat, snapshot, pairs)
+        flow['revision'] = updated.revision
+        flow['step'] = 'review'
+        flow['trip_done'] = True
+        flow['nonce'] = token_urlsafe(12)
+        return self._prompt(carrier, render_review(updated, self._profile(user, chat))
+                            + '\n' + QUESTIONS)
+
+    def _apply_pairs(self, user, chat, snapshot, pairs):
         facts = snapshot.draft.facts.model_dump()
         pricing = snapshot.pricing.model_dump()
-        note = snapshot.counter_note
+        trip = snapshot.trip.model_dump()
+        offer, note = snapshot.counter_offer, snapshot.counter_note
         issues = list(snapshot.draft.issues)
-        marked_name = None
-        weight_placeholder = False
-        field = field.lower()
-        if field == 'counter':
-            note = value.strip()[:200] or None
-            if value.strip().lower() == 'none':
-                note = None
-        elif field in ('payout', 'loaded', 'loaded_miles', 'deadhead', 'deadhead_miles',
-                       'weight', 'weight_lbs'):
-            name = {'loaded': 'loaded_miles', 'deadhead': 'deadhead_miles',
-                    'weight': 'weight_lbs'}.get(field, field)
-            marked_name = name
-            parsed = _unknown(value)
-            if parsed is None:
-                facts[name] = None
-            else:
-                bounds = {'payout': (0, 1000000, True), 'loaded_miles': (0, 100000, False),
-                          'deadhead_miles': (0, 100000, True), 'weight_lbs': (0, 200000, True)}[name]
-                facts[name] = _decimal(parsed, name=name, low=Decimal(bounds[0]),
-                                       high=Decimal(bounds[1]), allow_zero=bounds[2])
-                if name == 'weight_lbs' and facts[name] == 0:
+        sources = dict(snapshot.sources)
+        marked, weight_placeholder = set(), False
+        for name in ('equipment', 'operating_context'):
+            if name not in pairs:
+                continue
+            try:
+                current = self.opening.get_profile(user, chat)
+            except KeyError:
+                current = OpeningProfile()
+            data = current.model_dump()
+            parsed = _unknown(pairs[name])
+            data[name] = None if parsed is None else parsed.strip()[:500 if name == 'operating_context' else 200] or None
+            if parsed is not None and data[name] is None:
+                raise ValueError(f'Invalid {name}')
+            self.opening.set_profile(user, chat, OpeningProfile.model_validate(data))
+        for name, raw in pairs.items():
+            if name in ('equipment', 'operating_context'):
+                continue
+            parsed = _unknown(raw)
+            if name == 'counter':
+                stripped = raw.strip()
+                if stripped.lower() in ('none', 'unknown'):
+                    offer, note = None, None
+                elif re.match(r'^[\d$.,\s-]', stripped):
+                    offer = _decimal(_number(stripped, name=name), name=name,
+                                     low=Decimal(0), high=Decimal(1000000), allow_zero=True)
+                else:
+                    note = stripped[:200] or None
+                    if note is None:
+                        raise ValueError('Invalid counter')
+            elif name in ('duration_note', 'handling_note'):
+                limit = 200 if name == 'duration_note' else 500
+                trip[name] = None if parsed is None else parsed.strip()[:limit] or None
+                if parsed is not None and trip[name] is None:
+                    raise ValueError(f'Invalid {name}')
+            elif name == 'availability':
+                if parsed is None:
+                    trip[name] = 'unknown'
+                elif parsed.lower() not in ('feasible', 'blocked', 'unknown'):
+                    raise ValueError('Availability must be feasible, blocked, or unknown')
+                else:
+                    trip[name] = parsed.lower()
+            elif name in facts:
+                marked.add(name)
+                if parsed is None:
                     facts[name] = None
-                    weight_placeholder = True
-        elif field in ('target', 'cpm', 'minimum', 'reposition', 'reposition_miles'):
-            name = {'target': 'target_all_mile_rpm', 'cpm': 'operating_cpm',
-                    'minimum': 'minimum_job_charge',
-                    'reposition': 'reposition_miles'}.get(field, field)
-            parsed = _unknown(value)
-            if name == 'minimum_job_charge':
+                else:
+                    bounds = {'payout': (0, 1000000, True), 'loaded_miles': (0, 100000, False),
+                              'deadhead_miles': (0, 100000, True),
+                              'weight_lbs': (0, 200000, True)}[name]
+                    facts[name] = _decimal(_number(parsed, name=name), name=name,
+                                           low=Decimal(bounds[0]), high=Decimal(bounds[1]),
+                                           allow_zero=bounds[2])
+                    if name == 'weight_lbs' and facts[name] == 0:
+                        facts[name] = None
+                        weight_placeholder = True
+            elif name == 'minimum_job_charge':
                 if parsed is None:
                     raise ValueError('Minimum charge must be supplied, including explicit zero')
-                if parsed.lower() == 'none':
-                    pricing[name] = Decimal(0)
-                else:
-                    pricing[name] = _decimal(parsed, name=name, low=Decimal(0),
-                                             high=Decimal(1000000), allow_zero=True)
+                pricing[name] = Decimal(0) if parsed.lower() == 'none' else _decimal(
+                    _number(parsed, name=name), name=name, low=Decimal(0),
+                    high=Decimal(1000000), allow_zero=True)
             elif name == 'operating_cpm':
                 if parsed is None:
                     pricing[name] = None
@@ -206,33 +449,33 @@ class OpeningConversation:
                     raise ValueError('Itemized costs need explicit normalization first; '
                                      'pricing stays unavailable')
                 else:
-                    pricing[name] = _decimal(parsed, name=name, low=Decimal(0),
-                                             high=Decimal(1000), allow_zero=True)
+                    pricing[name] = _decimal(_number(parsed, name=name), name=name,
+                                            low=Decimal(0), high=Decimal(1000), allow_zero=True)
                     pricing['expense_claim'] = 'all_operating_expenses'
             elif parsed is None:
                 pricing[name] = None
             else:
                 bounds = {'target_all_mile_rpm': (0, 1000, False),
                           'reposition_miles': (0, 100000, True)}[name]
-                pricing[name] = _decimal(parsed, name=name, low=Decimal(bounds[0]),
-                                         high=Decimal(bounds[1]), allow_zero=bounds[2])
-        else:
-            raise ValueError('Unknown field; correct payout, loaded, deadhead, weight, target, '
-                             'cpm, minimum, reposition or counter')
+                pricing[name] = _decimal(_number(parsed, name=name), name=name,
+                                         low=Decimal(bounds[0]), high=Decimal(bounds[1]),
+                                         allow_zero=bounds[2])
+            sources[name if name != 'counter' else 'counter_offer'] = 'carrier'
+        if offer is None:
+            sources.pop('counter_offer', None)
+        keywords = {word for name in pairs for word in _RETIRE_KEYWORDS.get(name, ())}
+        issues = [issue for issue in issues
+                  if not any(word in issue.lower() for word in keywords)]
         if weight_placeholder and len(issues) < 6 and not any(
                 'weight' in issue.lower() for issue in issues):
             issues.append('Displayed zero weight is a placeholder requiring clarification.')
         draft = ScreenshotDraft(status='UNCONFIRMED', facts=IntakeFacts.model_validate(facts),
             evidence={**snapshot.draft.evidence,
-                      **({marked_name: 'carrier correction'} if marked_name else {})},
+                      **{name: 'carrier correction' for name in marked}},
             issues=issues)
-        updated = self.opening.put(user, chat, draft,
-            OpeningPricing.model_validate(pricing), expected_revision=snapshot.revision,
-            counter_note=note)
-        flow['revision'] = updated.revision
-        flow['step'] = 'review'
-        flow['nonce'] = token_urlsafe(12)
-        return self._prompt(carrier, render_review(updated) + '\n' + QUESTIONS)
+        return self.opening.put(user, chat, draft, OpeningPricing.model_validate(pricing),
+            expected_revision=snapshot.revision, trip=OpeningTrip.model_validate(trip),
+            counter_offer=offer, counter_note=note, sources=sources)
 
     def _advance(self, carrier, step, prompt):
         self._flows[carrier].update(step=step, nonce=token_urlsafe(12))
@@ -241,7 +484,28 @@ class OpeningConversation:
     def _prompt(self, carrier, prompt, *, save=True):
         if save:
             self._flows[carrier]['last_prompt'] = prompt
-        return prompt + '\nStep: ' + self._flows[carrier]['nonce'] + '\nReply format: /reply STEP answer'
+        return prompt + step_trailer(self._flows[carrier]['step'], self._flows[carrier]['nonce'])
+
+
+def step_trailer(step, nonce):
+    """Stage-specific instructions; no misleading generic reply footer."""
+    if step == 'memory':
+        return f'\nStep: {nonce}\nReply format: /reply STEP session|remember'
+    if step in ('profile', 'profile_review'):
+        return (f'\nStep: {nonce}\nSend one profile message '
+                '(cpm, target, minimum, equipment, context)')
+    if step == 'photo':
+        return '\nSend one PNG or JPEG screenshot of the opportunity.'
+    if step == 'trip':
+        return ('\nSend trip details in one message, or "skip". '
+                'Labels: deadhead, reposition, duration, availability, handling.')
+    if step == 'review':
+        return (f'\nStep: {nonce}\nReply format: /confirm STEP | '
+                '/edit STEP field value | correction as "field value"')
+    if step == 'confirmed':
+        return (f'\nStep: {nonce}\nReply format: /price | '
+                '/edit STEP field value | correction as "field value"')
+    return ''
 
 
 def create_opening_app(inbox, *, webhook_secret: str, allowed_host: str, conversation=None, send=None):
@@ -316,17 +580,56 @@ def create_opening_app(inbox, *, webhook_secret: str, allowed_host: str, convers
                             raise PermissionError()
                         inbox._access(user, chat, token)
                         media = parse_media_update(data, inbox._bindings, consented=True)
-                        if inbox.duplicate_update(user, chat, data['update_id'], 'screenshot'):
-                            return reply(200, 'duplicate')
-                        if inbox.stale_message(user, chat, message_id):
-                            return reply(200, 'stale')
-                        accepted = inbox.submit(user, chat, data['update_id'], 'screenshot',
-                            token=token, message_id=message_id, media=dict(
-                                file_id=media.file_id, file_unique_id=media.file_unique_id,
-                                mime=media.mime, reported_size=media.reported_size))
-                        if accepted and flow is not None:
-                            flow.pop('screenshot_notice', None)
-                    return reply(200, 'queued' if accepted else 'duplicate')
+                        try:
+                            conversation.opening.get_profile(user, chat)
+                        except KeyError:
+                            if send is None:
+                                return reply(503, 'unavailable')
+                            if inbox.duplicate_update(user, chat, data['update_id'], 'flow'):
+                                return reply(200, 'duplicate')
+                            if inbox.stale_message(user, chat, message_id):
+                                return reply(200, 'stale')
+                            guidance_claim = inbox.begin_flow(
+                                user, chat, data['update_id'], message_id=message_id)
+                            if guidance_claim is None:
+                                return reply(200, 'duplicate')
+                            guidance = ('Send your carrier profile first — one message with: '
+                                        'cpm, target, minimum, equipment, context. Screenshots '
+                                        'are processed only after the confirmed profile.')
+                        else:
+                            guidance, guidance_claim = None, None
+                        if guidance is None:
+                            if inbox.duplicate_update(user, chat, data['update_id'], 'screenshot'):
+                                return reply(200, 'duplicate')
+                            if inbox.stale_message(user, chat, message_id):
+                                return reply(200, 'stale')
+                            accepted = inbox.submit(user, chat, data['update_id'], 'screenshot',
+                                token=token, message_id=message_id, media=dict(
+                                    file_id=media.file_id, file_unique_id=media.file_unique_id,
+                                    mime=media.mime, reported_size=media.reported_size))
+                            if accepted and flow is not None:
+                                flow.pop('screenshot_notice', None)
+                            return reply(200, 'queued' if accepted else 'duplicate')
+                    if guidance is not None:
+                        def guidance_guard():
+                            with inbox._lock:
+                                inbox._access(user, chat, token)
+                                inbox.start_delivery(user, chat, data['update_id'], guidance_claim)
+                        try:
+                            await asyncio.to_thread(delivery.send, chat, guidance,
+                                                    guidance_guard, send)
+                            inbox.finish(user, chat, data['update_id'], guidance_claim,
+                                         success=True)
+                        except (Exception, asyncio.CancelledError) as exc:
+                            try:
+                                inbox.finish(user, chat, data['update_id'], guidance_claim,
+                                             success=False)
+                            except Exception:
+                                pass
+                            if isinstance(exc, asyncio.CancelledError):
+                                raise
+                            return reply(503, 'unavailable')
+                        return reply(200, 'processed')
                 finally:
                     flow_slots.release()
             if text is None:
@@ -462,6 +765,75 @@ def _finish_opening_text(snapshot_revision, result):
     return '\n'.join(lines)
 
 
+def _finish_evaluation_text(snapshot_revision, result):
+    def dollars(value):
+        return 'unknown' if value is None else '$' + value
+    titles = {'ACCEPT': 'The supplied checks pass.',
+              'NEGOTIATE': 'The current terms need work.',
+              'DECLINE': 'This schedule does not work.',
+              'NEED_MORE_INFORMATION': 'Add facts before deciding.'}
+    lines = [f'Offer evaluation — revision {snapshot_revision}: {result["decision"]}',
+        titles[result['decision']],
+        f"Compensation: {dollars(result['compensation'])} [{result['compensation_source']}]",
+        f"Total miles: {result['total_miles'] or 'unknown'}",
+        f"Estimated operating cost: {dollars(result['estimated_operating_cost'])}",
+        f"Target revenue: {dollars(result['target_revenue'])}"]
+    if result['revenue_gap_to_target'] is not None:
+        lines.append(f"Revenue gap to target: ${result['revenue_gap_to_target']}")
+    if result['estimated_operating_surplus'] is not None:
+        lines.append(f"Estimated operating surplus: ${result['estimated_operating_surplus']}")
+    if result['missing_information']:
+        lines.append('Missing: ' + ', '.join(result['missing_information']))
+    lines.append('Limits: stops, hours-of-service, routing and market conditions are not modeled; '
+                 'equipment match and schedule are carrier-supplied, not verified.')
+    lines.append('A decision here is never a booking; confirm logistics before acting.')
+    lines.append(result['notice'])
+    return '\n'.join(lines)
+
+
+def negotiation_guidance(kind, result):
+    """Deterministic guidance. Broker wording stays separate from internal costs."""
+    lines = ['Negotiation guidance (internal):']
+    if kind == 'opening_bid':
+        if result['opening_bid'] is not None:
+            lines.append(f"Basis: {result['total_miles']} mi at confirmed operating cost "
+                         f"${result['estimated_operating_cost']}; target revenue "
+                         f"${result['target_revenue']}; opening ${result['opening_bid']}.")
+        else:
+            lines.append('Basis unavailable: '
+                         + (', '.join(result['missing']) or 'review required') + '.')
+        lines.append('Unknown schedule allows preliminary pricing but blocks full acceptance.')
+        lines.append('Repricing triggers: detention, lumper, reefer or temperature control, '
+                     'tarping, team service, extra stops, revised miles.')
+        if result['opening_bid'] is not None:
+            lines.append('Broker wording (DRAFT — NOT SENT; no internal costs):')
+            lines.append(f'"Thanks — I can open at ${result["opening_bid"]} on these details. '
+                         'Please confirm commodity, weight, loading appointment and any '
+                         'handling or accessorial needs; added service may require repricing."')
+        return '\n'.join(lines)
+    decision = result['decision']
+    if decision == 'ACCEPT':
+        lines.append('The compensation meets the confirmed target, exceeds operating cost, '
+                     'and clears the minimum with feasible availability.')
+        lines.append('Before acting, still confirm loading appointment, commodity, weight, '
+                     'handling needs and payment terms. ACCEPT is not a booking.')
+    elif decision == 'NEGOTIATE':
+        lines.append(f"Gap to target revenue: ${result['revenue_gap_to_target']}.")
+        lines.append('Ask at or above the target revenue; do not concede below operating '
+                     'cost or the confirmed minimum.')
+        lines.append('Broker wording (DRAFT — NOT SENT; no internal costs):')
+        lines.append(f'"Thanks — at the current offer this one does not work for me. '
+                     f'I can do it at ${result["target_revenue"]}. Can you confirm commodity, '
+                     'weight, loading appointment and any accessorial needs?"')
+    elif decision == 'DECLINE':
+        lines.append('Availability is confirmed blocked. No price changes that decision; '
+                     'only a schedule change with a fresh revision can.')
+    else:
+        lines.append('Missing: ' + (', '.join(result['missing_information']) or 'review required')
+                     + '. Ask the broker for the missing facts; do not guess them.')
+    return '\n'.join(lines)
+
+
 def run_screenshot(inbox, delegator, send, *, user: int, chat: int, update_id: int):
     """One extraction attempt; injected sender MUST be bounded and nonretrying."""
     with inbox._lock:
@@ -484,15 +856,27 @@ def run_screenshot(inbox, delegator, send, *, user: int, chat: int, update_id: i
             current = opening.get(user, chat)
             if current.revision != expected + 1 or current != snapshot:
                 raise ValueError('Result changed')
-            text = ('UNCONFIRMED screenshot draft — verify every value.\n'
-                    + render_review(snapshot) + '\n' + QUESTIONS)
+            try:
+                profile = opening.get_profile(user, chat)
+            except KeyError:
+                profile = None
+            previous = inbox._conversation_states.get(carrier)
+            trip_done = bool(previous and previous.get('trip_done'))
+            if trip_done:
+                step = 'review'
+                text = ('UNCONFIRMED screenshot draft — verify every value.\n'
+                        + render_review(snapshot, profile) + '\n' + QUESTIONS)
+            else:
+                step = 'trip'
+                text = ('UNCONFIRMED screenshot draft — verify every value.\n'
+                        + render_review(snapshot, profile) + '\n' + TRIP_PROMPT)
             if len(text) > 4000:
                 raise ValueError('Reply too large')
             nonce = token_urlsafe(12)
             inbox._conversation_states[carrier] = dict(
-                step='review', nonce=nonce, revision=snapshot.revision, token=token,
-                values={}, last_prompt=text)
-            text += '\nStep: ' + nonce + '\nReply format: /reply STEP answer'
+                step=step, nonce=nonce, revision=snapshot.revision, token=token,
+                values={}, trip_done=trip_done, last_prompt=text)
+            text += step_trailer(step, nonce)
         def guard():
             with inbox._lock:
                 inbox._access(user, chat, token)
@@ -533,16 +917,20 @@ def run_opening(inbox, delegator, send, *, user: int, chat: int, update_id: int)
     try:
         outcome = delegator.opening(user, chat, token, revision)
         with inbox._lock:
-            canonical = opening.price(user, chat, revision)
-            if outcome['result'] != canonical:
+            kind, canonical = opening.decide(user, chat, revision)
+            if (outcome['kind'], outcome['result']) != (kind, canonical):
                 raise ValueError('Result changed')
-            text = _finish_opening_text(revision, canonical)
+            if kind == 'offer_evaluation':
+                text = _finish_evaluation_text(revision, canonical)
+            else:
+                text = _finish_opening_text(revision, canonical)
+            text += '\n' + negotiation_guidance(kind, canonical)
             if len(text) > 4000:
                 raise ValueError('Reply too large')
         def guard():
             with inbox._lock:
                 inbox._access(user, chat, token)
-                if opening.price(user, chat, revision) != canonical:
+                if opening.decide(user, chat, revision) != (kind, canonical):
                     raise ValueError('Result changed')
                 inbox.start_delivery(user, chat, update_id, claim)
         with inbox._lock:

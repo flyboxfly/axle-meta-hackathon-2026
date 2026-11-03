@@ -23,7 +23,7 @@ REAL_INSTRUCTIONS = '''Extract visible facts from ONE owner-supplied freight scr
 Return ONLY one JSON object matching the supplied schema. No markdown, prose or extra fields.
 Copy only clearly visible facts with short exact supporting text. Missing, illegible, conflicting or ambiguous values must be null; explain briefly in issues. Never infer equipment from a logo or generic truck icon.
 Payout is complete confirmed compensation only when explicitly labeled total/all-in. An opening bid, base price, fuel surcharge or accessorials alone never prove a total; never sum, double count or convert a bid into a payout.
-Loaded miles must be explicitly distinguished from deadhead/total miles. Do not derive miles from displayed RPM or locations. Never infer deadhead, current location, availability, schedule, costs or any carrier pricing target.
+Loaded miles must be explicitly distinguished from deadhead/total miles. Do not derive miles from displayed RPM or locations. If mileage is labeled estimated (for example 'Est. mileage'), record the miles as null and quote the exact wording in issues; never adopt an estimate as confirmed miles. Never infer deadhead, current location, availability, schedule, costs or any carrier pricing target.
 A displayed zero weight is a placeholder requiring clarification, not a fact. Do not extract carrier names, IDs, addresses, personal details or credentials. Do not claim native Meta/Muse integration.'''
 
 TELEGRAM_HOSTS = frozenset({'api.telegram.org'})
