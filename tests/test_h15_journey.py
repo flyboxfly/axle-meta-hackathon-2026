@@ -73,6 +73,27 @@ def test_profile_required_before_screenshot(store):
     assert store._conversation_states['owner']['step'] == 'photo'
 
 
+def test_expense_claim_displays_friendly_label(store):
+    from axle_hackathon.opening_workflow import display_expense_claim
+    assert display_expense_claim('all_operating_expenses') == 'All operating expenses'
+    assert display_expense_claim(None) == 'unknown'
+    assert display_expense_claim('custom') == 'custom'
+    conversation = consent(store)
+    shown = conversation.handle(1, 1, PROFILE)
+    assert 'All operating expenses' in shown
+    assert 'all_operating_expenses' not in shown
+    nonce = store._conversation_states['owner']['nonce']
+    conversation.handle(1, 1, f'/confirm {nonce}')
+    token = store._active['owner'].token
+    h15.submit_shot(store, token)
+    assert h15.worker(store, []).tick() == 'completed'
+    conversation.handle(1, 1, 'skip')
+    review = conversation.handle(1, 1, '/refresh')
+    assert 'All operating expenses' in review
+    assert 'all_operating_expenses' not in review
+    assert store._opening.get_profile(1, 1).expense_claim == 'all_operating_expenses'
+
+
 def test_profile_minimum_required_and_itemized_rejected(store):
     conversation = consent(store)
     with pytest.raises(ValueError, match='Minimum charge must be supplied'):

@@ -12,7 +12,7 @@ from fastapi.responses import JSONResponse
 
 from .opening_intake import IntakeFacts, ScreenshotDraft, parse_media_update
 from .opening_workflow import (OpeningPricing, OpeningProfile, OpeningTrip,
-                               render_review)
+                               display_expense_claim, render_review)
 from .pilot_delivery import DeliveryPool
 from .pilot_memory import _token_matches
 from .remote_app import _is_valid_hostname
@@ -313,7 +313,7 @@ class OpeningConversation:
             return str(value) if value is not None else 'unknown'
         return ('SESSION PROFILE — review before screenshot upload:\n'
             f'operating CPM: {shown(profile.operating_cpm)}\n'
-            f'expense claim: {profile.expense_claim or "unknown"}\n'
+            f'expense claim: {display_expense_claim(profile.expense_claim)}\n'
             f'target all-mile RPM: {shown(profile.target_all_mile_rpm)}\n'
             f'minimum job charge: {shown(profile.minimum_job_charge)}\n'
             f'equipment: {shown(profile.equipment)}\n'

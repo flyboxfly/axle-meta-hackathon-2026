@@ -14,8 +14,11 @@ function stepsTo(stage) {
   const rank = { profile: 0, photo: 1, review: 2, confirmed: 3, evaluating: 3, decided: 4 };
   const at = rank[stage] === undefined ? 0 : rank[stage];
   document.querySelectorAll('#steps li').forEach((li, i) => {
+    const current = i === at && stage !== 'decided';
     li.classList.toggle('done', i < at || (stage === 'decided' && i <= at));
-    li.classList.toggle('now', i === at && stage !== 'decided');
+    li.classList.toggle('now', current);
+    if (current) li.setAttribute('aria-current', 'step');
+    else li.removeAttribute('aria-current');
   });
 }
 async function api(path, body) {
@@ -33,6 +36,7 @@ function fieldRow(label, field) {
   let shown, cls = '';
   if (!field || field.value === null || field.value === undefined) { shown = 'unknown'; cls = 'unknown'; }
   else if (field.state === 'explicit_zero') { shown = esc(field.value) + ' (explicit zero)'; cls = 'zero'; }
+  else if (field.value === 'all_operating_expenses') shown = 'All operating expenses';
   else shown = esc(field.value);
   const src = field && field.source ? '<span class="badge src-' + esc(String(field.source).split(' ')[0]) + '">' + esc(field.source) + '</span>' : '';
   return '<div class="row"><span class="k">' + esc(label) + '</span><span class="v ' + cls + '">' + shown + src + '</span></div>';

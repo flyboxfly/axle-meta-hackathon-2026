@@ -86,6 +86,13 @@ def propose_mileage(snapshot: OpeningSnapshot) -> list[str]:
     return candidates
 
 
+def display_expense_claim(value):
+    """Carrier-facing expense-claim label; the stored value is unchanged."""
+    if value == 'all_operating_expenses':
+        return 'All operating expenses'
+    return str(value) if value else 'unknown'
+
+
 def render_review(snapshot: OpeningSnapshot, profile: OpeningProfile | None = None) -> str:
     """Consolidated review with accurate per-value source labels."""
     facts = snapshot.draft.facts
@@ -107,7 +114,7 @@ def render_review(snapshot: OpeningSnapshot, profile: OpeningProfile | None = No
         'Session profile pricing (confirmed before upload unless edited):',
         f'target all-mile RPM: {tagged("target_all_mile_rpm", pricing.target_all_mile_rpm)}',
         f'operating CPM: {tagged("operating_cpm", pricing.operating_cpm)}',
-        f'expense claim: {pricing.expense_claim or "unknown"}',
+        f'expense claim: {display_expense_claim(pricing.expense_claim)}',
         f'minimum job charge: {tagged("minimum_job_charge", pricing.minimum_job_charge)}',
         f'equipment: {shown(profile.equipment) if profile else "unknown"} [profile]',
         f'operating context: {shown(profile.operating_context) if profile else "unknown"} [profile]',

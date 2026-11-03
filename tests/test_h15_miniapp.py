@@ -347,6 +347,24 @@ def test_stepper_short_label_only_in_progress_indicator(store, client):
     assert 'Srnshot' not in shipped_js
 
 
+def test_current_step_magenta_and_expense_display(store, client):
+    from pathlib import Path
+    page = client.get('/miniapp/').text
+    assert '.steps li.done{color:var(--cyan);border-color:var(--cyan)}' in page
+    assert ('.steps li.now{color:var(--pink);border-color:var(--pink);'
+            'text-decoration:underline}') in page
+    assert '.steps li{flex:1 1 0;min-width:0;font-size:11px;color:var(--muted)' in page
+    shipped_js = Path('src/axle_hackathon/miniapp_app.js').read_text()
+    assert "setAttribute('aria-current', 'step')" in shipped_js
+    assert "removeAttribute('aria-current')" in shipped_js
+    assert "field.value === 'all_operating_expenses'" in shipped_js
+    assert "'All operating expenses'" in shipped_js
+    consent(store)
+    staged = api(client, 'profile', launch(), request_id=rid(),
+                 fields=dict(PROFILE)).json()['state']['staged_profile']
+    assert staged['expense_claim']['value'] == 'all_operating_expenses'
+
+
 def profiled(client, data=None, fields=None):
     data = data or launch()
     response = api(client, 'profile', data, request_id=rid(), fields=fields or dict(PROFILE))
