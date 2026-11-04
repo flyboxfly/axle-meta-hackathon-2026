@@ -1090,3 +1090,42 @@ def test_bot_edit_after_uncertain_requires_fresh_confirmation(store):
     store._opening.confirm(1, 1, edited.revision)
     assert store.submit(1, 1, 83, 'opening', token=access.token,
                         revision=edited.revision, message_id=83)
+
+
+@pytest.mark.parametrize('output,status', [
+    # Refusal delivered as a message item instead of a function call.
+    ([NS(type='message', role='assistant',
+         content=[NS(type='refusal', refusal='invented refusal')])], 'completed'),
+    # Terminal status that is not completed.
+    ([NS(type='function_call', status='completed', name='review_confirmed_opening',
+         arguments=json.dumps({'revision': 1}))], 'incomplete'),
+    # Malformed argument payloads for the single pricing tool.
+    ([NS(type='function_call', status='completed', name='review_confirmed_opening',
+         arguments='not-json')], 'completed'),
+    ([NS(type='function_call', status='completed', name='review_confirmed_opening',
+         arguments=json.dumps({'revision': '1'}))], 'completed'),
+    ([NS(type='function_call', status='completed', name='review_confirmed_opening',
+         arguments=json.dumps({'revision': 1, 'extra': 1}))], 'completed'),
+    ([NS(type='function_call', status='in_progress', name='review_confirmed_opening',
+         arguments=json.dumps({'revision': 1}))], 'completed'),
+])
+def test_pricing_response_shapes_fail_closed(store, output, status):
+    access, conversation, _ = ready_revision(store)
+    for correction in ('target 2.50', 'cpm 1.25', 'minimum 100', 'reposition 0'):
+        conversation.handle(1, 1, correction)
+    snapshot = store._opening.get(1, 1)
+    store._opening.confirm(1, 1, snapshot.revision)
+    seen = {}
+    def create(**payload):
+        seen.update(payload)
+        return NS(status=status, output=output, id='resp-shape', usage=None)
+    inner = OpeningDelegator(store, store._opening, NS(),
+                             NS(responses=NS(create=create)), media=NS())
+    with pytest.raises(ValueError, match='Invalid model delegation'):
+        inner.select_pricing(1, 1, access.token, snapshot.revision)
+    # Official contract: only tool_choice "auto" exists; forcing a named
+    # function returns HTTP 400, so the request must not require one.
+    assert seen.get('tool_choice') in (None, 'auto')
+    assert len(seen['tools']) == 1
+    assert store._opening.last_result(1, 1) is None
+    assert store._opening.get(1, 1).revision == snapshot.revision

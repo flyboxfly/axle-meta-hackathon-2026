@@ -70,6 +70,13 @@ A timeout never authorizes a retry.
   Sources: https://dev.meta.ai/docs/image-understanding,
   https://dev.meta.ai/docs/structured-output,
   https://dev.meta.ai/docs/tool-calling
+- Tool choice (rechecked November 4, 2026): only `tool_choice: "auto"` (the
+  default) is supported on the Responses API; `"none"`, `"required"` and named
+  function choices return HTTP 400. The single-tool pricing request therefore
+  must not force `review_confirmed_opening`; a plain-text (non-tool) reply is
+  possible and stays fail-closed as `invalid_model_response`. Sources:
+  https://dev.meta.ai/docs/tool-calling,
+  https://dev.meta.ai/docs/protocols/responses
 - REST response shape: visible text comes from `output[]` message
   `output_text` parts; top-level `output_text` is an SDK-only helper and
   must not be read over direct HTTP. Reasoning effort `low` is valid;
