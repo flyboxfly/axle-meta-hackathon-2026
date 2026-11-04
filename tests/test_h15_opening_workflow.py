@@ -157,8 +157,9 @@ def test_correction_invalidates_confirmation_and_stale_price_rejected(store):
 
 def test_inflight_correction_blocks_old_pricing_result(store):
     access, conversation, _ = ready_revision(store)
-    store._opening.confirm(1, 1, 1)
-    store.submit(1, 1, 61, 'opening', token=access.token, revision=1, message_id=61)
+    conversation.handle(1, 1, 'cpm 1.25')
+    store._opening.confirm(1, 1, 2)
+    store.submit(1, 1, 61, 'opening', token=access.token, revision=2, message_id=61)
     sent, entered, release = [], Event(), Event()
     inner = delegator(store, [], image_text=draft_text())
     real = inner.select_pricing
@@ -182,9 +183,10 @@ def test_inflight_correction_blocks_old_pricing_result(store):
 
 
 def test_consent_withdrawn_inflight_blocks_delivery(store):
-    access, _, _ = ready_revision(store)
-    store._opening.confirm(1, 1, 1)
-    store.submit(1, 1, 62, 'opening', token=access.token, revision=1, message_id=62)
+    access, conversation, _ = ready_revision(store)
+    conversation.handle(1, 1, 'cpm 1.25')
+    store._opening.confirm(1, 1, 2)
+    store.submit(1, 1, 62, 'opening', token=access.token, revision=2, message_id=62)
     sent, entered, release = [], Event(), Event()
     inner = delegator(store, [], image_text=draft_text())
     real = inner.select_pricing
@@ -979,3 +981,112 @@ def test_prepare_opening_cli_writes_real_config(tmp_path, monkeypatch, capsys):
     output = capsys.readouterr()
     assert TOKEN not in output.out + output.err
     assert launch.read_real_config(path)[0]['approved_real_opening_test'] is True
+
+
+def test_pricing_missing_inputs_checked_before_model_call(store):
+    from axle_hackathon.opening_workflow import pricing_blockers
+    access, conversation, _ = ready_revision(store)
+    conversation.handle(1, 1, 'cpm 1.25')
+    conversation.handle(1, 1, 'loaded unknown')
+    snapshot = store._opening.get(1, 1)
+    assert pricing_blockers(snapshot) == ['loaded_miles']
+    store._opening.confirm(1, 1, snapshot.revision)
+    calls = []
+    inner = delegator(store, calls, image_text=draft_text())
+    with pytest.raises(ValueError, match='Missing pricing inputs'):
+        inner.select_pricing(1, 1, access.token, snapshot.revision)
+    assert calls == []
+    with pytest.raises(ValueError, match='Missing pricing inputs'):
+        store.submit(1, 1, 77, 'opening', token=access.token,
+                     revision=snapshot.revision, message_id=77)
+    assert store._db.execute(
+        "SELECT COUNT(*) FROM pilot_updates WHERE action='opening'").fetchone() == (0,)
+
+
+def test_text_transport_preserves_response_metadata(store):
+    import httpx as _httpx
+    access, conversation, _ = ready_revision(store)
+    for correction in ('target 2.50', 'cpm 1.25', 'minimum 100', 'reposition 0'):
+        conversation.handle(1, 1, correction)
+    snapshot = store._opening.get(1, 1)
+    store._opening.confirm(1, 1, snapshot.revision)
+    def handle(request):
+        payload = json.loads(request.content)
+        revision = json.loads(payload['input'])['revision']
+        return response(200, json_value={'status': 'completed', 'id': 'resp-meta-1',
+            'usage': {'input_tokens': 7, 'output_tokens': 3},
+            'output': [{'type': 'function_call', 'status': 'completed',
+                        'name': 'review_confirmed_opening',
+                        'arguments': json.dumps({'revision': revision})}]})
+    raw = _httpx.Client(transport=_httpx.MockTransport(handle))
+    try:
+        text = MetaResponsesClient(raw, 'invented-key', seconds=5)
+        inner = OpeningDelegator(store, store._opening, NS(), text, media=NS())
+        outcome = inner.select_pricing(1, 1, access.token, snapshot.revision)
+        assert outcome['trace']['response_id'] == 'resp-meta-1'
+        assert outcome['trace']['usage'] == {'input_tokens': 7, 'output_tokens': 3}
+    finally:
+        raw.close()
+
+
+def test_failure_categories_persisted_without_payload(store):
+    access = session(store)
+    inner = delegator(store, [], image_text=draft_text(), fail='model')
+    worker = OpeningWorker(store, inner, lambda *_: True, global_limit=4, carrier_limit=4)
+    submit_shot(store, access.token)
+    assert worker.tick() == 'uncertain'
+    row = store._db.execute(
+        'SELECT p.status, f.category FROM pilot_updates p '
+        'LEFT JOIN pilot_failure_categories f ON f.update_id=p.update_id').fetchone()
+    assert row == ('uncertain', 'provider_error')
+    dump = repr(store._db.execute('SELECT * FROM pilot_updates').fetchall())
+    assert 'invented provider failure' not in dump
+
+
+def test_pricing_invalid_response_category_and_repeat_guard(store):
+    access, conversation, _ = ready_revision(store)
+    for correction in ('target 2.50', 'cpm 1.25', 'minimum 100', 'reposition 0'):
+        conversation.handle(1, 1, correction)
+    snapshot = store._opening.get(1, 1)
+    store._opening.confirm(1, 1, snapshot.revision)
+    store.submit(1, 1, 80, 'opening', token=access.token,
+                 revision=snapshot.revision, message_id=80)
+    inner = delegator(store, [], image_text=draft_text())
+    inner._text = NS(responses=NS(create=lambda **kw: NS(
+        status='completed', id='resp-text', usage=None,
+        output=[NS(type='message', role='assistant')])))
+    worker = OpeningWorker(store, inner, lambda *_: True, global_limit=4, carrier_limit=4)
+    assert worker.tick() == 'uncertain'
+    row = store._db.execute(
+        'SELECT f.category FROM pilot_updates p '
+        'JOIN pilot_failure_categories f ON f.update_id=p.update_id '
+        "WHERE p.action='opening'").fetchone()
+    assert row == ('invalid_model_response',)
+    assert not store.submit(1, 1, 81, 'opening', token=access.token,
+                            revision=snapshot.revision, message_id=81)
+    assert store.submit(1, 1, 81, 'opening', token=access.token,
+                        revision=snapshot.revision, message_id=81,
+                        allow_uncertain_retry=True)
+
+
+def test_bot_edit_after_uncertain_requires_fresh_confirmation(store):
+    access, conversation, _ = ready_revision(store)
+    for correction in ('target 2.50', 'cpm 1.25', 'minimum 100', 'reposition 0'):
+        conversation.handle(1, 1, correction)
+    snapshot = store._opening.get(1, 1)
+    flow = store._conversation_states['owner']
+    conversation.handle(1, 1, f"/confirm {flow['nonce']}")
+    store.submit(1, 1, 82, 'opening', token=access.token,
+                 revision=snapshot.revision, message_id=82)
+    inner = delegator(store, [], image_text=draft_text(), fail='model')
+    worker = OpeningWorker(store, inner, lambda *_: True, global_limit=4, carrier_limit=4)
+    assert worker.tick() == 'uncertain'
+    conversation.handle(1, 1, 'target 2.60')
+    edited = store._opening.get(1, 1)
+    assert edited.revision == snapshot.revision + 1 and not edited.confirmed
+    with pytest.raises(ValueError):
+        store.submit(1, 1, 83, 'opening', token=access.token,
+                     revision=edited.revision, message_id=83)
+    store._opening.confirm(1, 1, edited.revision)
+    assert store.submit(1, 1, 83, 'opening', token=access.token,
+                        revision=edited.revision, message_id=83)

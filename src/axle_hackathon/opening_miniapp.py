@@ -45,7 +45,7 @@ from fastapi.responses import HTMLResponse, JSONResponse
 
 from .opening_telegram import (FIELD_LABELS, apply_pairs_to_snapshot,
                                negotiation_guidance, validate_profile_pairs)
-from .opening_workflow import propose_mileage
+from .opening_workflow import mileage_candidates, pricing_blockers, propose_mileage
 from .remote_app import _is_valid_hostname
 
 INITDATA_MAX_CHARS = 8192
@@ -280,7 +280,8 @@ def review_payload(snapshot, profile):
         'profile': profile_payload(profile),
         'counter_note': _text_field(snapshot.counter_note, 'carrier'),
         'issues': list(snapshot.draft.issues),
-        'mileage_proposals': propose_mileage(snapshot)}
+        'mileage_proposals': propose_mileage(snapshot),
+        'mileage_candidates': mileage_candidates(snapshot)}
     if snapshot.counter_offer is not None:
         review['counter_offer'] = _number_field(
             snapshot.counter_offer, sources.get('counter_offer', 'carrier'))
@@ -301,13 +302,23 @@ def evaluation_status(inbox, carrier, revision):
         row = inbox._db.execute(
             "SELECT update_id, status FROM pilot_updates WHERE carrier=? AND action='opening' "
             'AND revision=? ORDER BY update_id DESC LIMIT 1', (carrier, revision)).fetchone()
+        category = None
+        if row is not None:
+            kept = inbox._db.execute(
+                'SELECT category FROM pilot_failure_categories WHERE update_id=?',
+                (row[0],)).fetchone()
+            category = kept[0] if kept else None
     if row is None:
         return {'state': 'not_requested'}
-    update_id, status = row
+    update_id, status = row[0], row[1]
     if status in ('queued', 'processing', 'sending'):
         return {'state': 'pending', 'update_id': update_id}
-    return {'state': 'completed' if status == 'completed' else 'uncertain',
-            'update_id': update_id}
+    if status == 'completed':
+        return {'state': 'completed', 'update_id': update_id}
+    # Sanitized enum only; never exception text or provider detail.
+    from .pilot_execution import FAILURE_CATEGORIES
+    return {'state': 'uncertain', 'update_id': update_id,
+            'failure_category': category if category in FAILURE_CATEGORIES else 'unknown'}
 
 
 def build_state(inbox, user, chat):
@@ -707,6 +718,15 @@ def mount_miniapp(app, inbox, *, bot_token, allowed_host):
                 if snapshot.revision != revision or not snapshot.confirmed:
                     complete_request(inbox, request_id)
                     return conflict(user, chat, 'Confirm the current revision first')
+                blockers = pricing_blockers(snapshot)
+                if blockers:
+                    complete_request(inbox, request_id)
+                    return JSONResponse(
+                        {'ok': False,
+                         'error': 'Missing pricing inputs: ' + ', '.join(blockers),
+                         'missing': blockers,
+                         'state': build_state(inbox, user, chat)},
+                        status_code=409, headers=dict(NO_STORE))
                 stored = opening.last_result(user, chat)
                 if stored is not None and stored[1].get('revision') == revision:
                     complete_request(inbox, request_id)
@@ -719,9 +739,19 @@ def mount_miniapp(app, inbox, *, bot_token, allowed_host):
                     return JSONResponse({'ok': True, 'evaluation': pending,
                                          'state': build_state(inbox, user, chat)},
                                         headers=dict(NO_STORE))
+                if (pending['state'] == 'uncertain'
+                        and data.get('retry_uncertain') is not True):
+                    # Accidental repeats after uncertainty never spend again.
+                    # The carrier edits (fresh revision) or retries explicitly.
+                    complete_request(inbox, request_id, pending.get('update_id'))
+                    return JSONResponse({'ok': True, 'evaluation': pending,
+                                         'state': build_state(inbox, user, chat)},
+                                        headers=dict(NO_STORE))
                 update_id = allocate_miniapp_update_id(inbox)
                 accepted = inbox.submit(user, chat, update_id, 'opening', token=token,
-                                        revision=revision)
+                                        revision=revision,
+                                        allow_uncertain_retry=data.get(
+                                            'retry_uncertain') is True)
                 complete_request(inbox, request_id, update_id)
                 status = {'state': 'pending', 'update_id': update_id}
                 if not accepted:

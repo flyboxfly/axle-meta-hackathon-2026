@@ -14,6 +14,7 @@ from .opening_intake import IntakeFacts, ScreenshotDraft, parse_media_update
 from .opening_workflow import (OpeningPricing, OpeningProfile, OpeningTrip,
                                display_expense_claim, render_review)
 from .pilot_delivery import DeliveryPool
+from .pilot_execution import failure_category_for
 from .pilot_memory import _token_matches
 from .remote_app import _is_valid_hostname
 
@@ -935,6 +936,7 @@ def run_screenshot(inbox, delegator, send, *, user: int, chat: int, update_id: i
             expected = opening.get(user, chat).revision
         except KeyError:
             expected = 0
+    stage = 'attempt'
     try:
         outcome = delegator.screenshot(user, chat, token, media['file_id'], media['mime'],
                                        expected_revision=expected)
@@ -973,11 +975,13 @@ def run_screenshot(inbox, delegator, send, *, user: int, chat: int, update_id: i
         with inbox._lock:
             if inbox._delivery_pool is None:inbox._delivery_pool=DeliveryPool(None)
             pool=inbox._delivery_pool
+        stage = 'delivery'
         pool.send(chat, text, guard, send)
         inbox.finish(user, chat, update_id, claim, success=True)
-    except Exception:
+    except Exception as exc:
         try:
-            inbox.finish(user, chat, update_id, claim, success=False)
+            inbox.finish(user, chat, update_id, claim, success=False,
+                         category=failure_category_for(exc, stage=stage))
         except Exception:
             pass
         try:
@@ -1001,6 +1005,7 @@ def run_opening(inbox, delegator, send, *, user: int, chat: int, update_id: int)
         token = access.token
         claim, revision = inbox.claim_opening(user, chat, update_id, token)
         opening = inbox._opening
+    stage = 'attempt'
     try:
         outcome = delegator.opening(user, chat, token, revision)
         with inbox._lock:
@@ -1023,11 +1028,13 @@ def run_opening(inbox, delegator, send, *, user: int, chat: int, update_id: int)
         with inbox._lock:
             if inbox._delivery_pool is None:inbox._delivery_pool=DeliveryPool(None)
             pool=inbox._delivery_pool
+        stage = 'delivery'
         pool.send(chat, text, guard, send)
         inbox.finish(user, chat, update_id, claim, success=True)
-    except Exception:
+    except Exception as exc:
         try:
-            inbox.finish(user, chat, update_id, claim, success=False)
+            inbox.finish(user, chat, update_id, claim, success=False,
+                         category=failure_category_for(exc, stage=stage))
         except Exception:
             pass
         raise RuntimeError('Worker failed; outcome uncertain; no automatic retry') from None

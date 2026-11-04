@@ -500,3 +500,25 @@ def test_expired_consent_blocks_profile_confirm(tmp_path):
             inbox._opening.get_profile(1, 1)
     finally:
         inbox.close()
+
+
+def test_est_mileage_candidate_structure_and_bot_adoption_hint(store):
+    from axle_hackathon.opening_workflow import mileage_candidates, propose_mileage
+    conversation = profiled(store)
+    token = store._active['owner'].token
+    noted = json.dumps(dict(status='UNCONFIRMED',
+        facts=dict(payout=None, loaded_miles=None, deadhead_miles=None, weight_lbs=None),
+        evidence=dict(payout='', loaded_miles='', deadhead_miles='', weight_lbs=''),
+        issues=["Mileage labeled 'Est. mileage 480 mi' — verify before use."]))
+    inner = h15.delegator(store, [], image_text=noted)
+    worker = OpeningWorker(store, inner, lambda *_: True, global_limit=4, carrier_limit=4)
+    h15.submit_shot(store, token)
+    assert worker.tick() == 'completed'
+    snapshot = store._opening.get(1, 1)
+    assert mileage_candidates(snapshot) == [{
+        'field': 'loaded_miles', 'value': '480', 'unit': 'mi',
+        'source_text': "Mileage labeled 'Est. mileage 480 mi' — verify before use."}]
+    assert propose_mileage(snapshot) == ['480 mi']
+    review = conversation.handle(1, 1, 'skip')
+    assert 'loaded 480' in review
+    assert store._opening.get(1, 1).draft.facts.loaded_miles is None

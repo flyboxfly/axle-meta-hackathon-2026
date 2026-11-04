@@ -6,6 +6,8 @@ No raw messages/media, consent tokens or provider responses are persisted here.
 from hashlib import sha256
 from secrets import token_urlsafe
 
+from .opening_workflow import pricing_blockers
+from .pilot_execution import FAILURE_CATEGORIES
 from .pilot_memory import PilotMemory
 
 
@@ -81,11 +83,18 @@ class PilotInbox(PilotMemory):
             self._db.execute('''CREATE TABLE IF NOT EXISTS pilot_updates (
                 update_id INTEGER PRIMARY KEY, carrier TEXT NOT NULL, action TEXT NOT NULL,
                 revision INTEGER, generation TEXT, status TEXT NOT NULL, claim TEXT)''')
+            # Sanitized failure categories in a side table only: the ledger
+            # schema and every historical row stay exactly as recorded.
+            self._db.execute('''CREATE TABLE IF NOT EXISTS pilot_failure_categories (
+                update_id INTEGER PRIMARY KEY, category TEXT NOT NULL)''')
             # Telegram file references only; image bytes are never stored here.
             self._db.execute('''CREATE TABLE IF NOT EXISTS pilot_media (
                 update_id INTEGER PRIMARY KEY, carrier TEXT NOT NULL, file_id TEXT NOT NULL,
                 file_unique_id TEXT NOT NULL, mime TEXT NOT NULL, reported_size INTEGER)''')
             # An interrupted paid request has an unknown outcome. Never replay it.
+            self._db.execute("INSERT OR IGNORE INTO pilot_failure_categories "
+                             "SELECT update_id,'unknown' FROM pilot_updates "
+                             "WHERE status IN ('processing','sending')")
             self._db.execute("UPDATE pilot_updates SET status='uncertain' WHERE status IN ('processing','sending')")
             self._db.execute('''CREATE TABLE IF NOT EXISTS pilot_privacy (
                 carrier TEXT NOT NULL,user_id INTEGER NOT NULL,chat_id INTEGER NOT NULL,
@@ -96,7 +105,7 @@ class PilotInbox(PilotMemory):
                 message_id INTEGER NOT NULL,PRIMARY KEY(carrier,user_id,chat_id))''')
 
     def submit(self, user, chat, update_id, action, *, token=None, revision=None, command_id=None,
-               message_id=None, media=None) -> bool:
+               message_id=None, media=None, allow_uncertain_retry=False) -> bool:
         """True means durably recorded; False means duplicate, without another effect."""
         with self._lock:
             carrier = self._carrier(user, chat)
@@ -160,6 +169,9 @@ class PilotInbox(PilotMemory):
                 snapshot = opening.get(user, chat)
                 if type(revision) is not int or snapshot.revision != revision or not snapshot.confirmed:
                     raise ValueError('Confirmed current revision required')
+                blockers = pricing_blockers(snapshot)
+                if blockers:
+                    raise ValueError('Missing pricing inputs: ' + ', '.join(blockers))
                 generation = sha256(token.encode('ascii')).hexdigest()
             elif token is not None or revision is not None:
                 raise ValueError('Forget does not take evaluation arguments')
@@ -176,6 +188,17 @@ class PilotInbox(PilotMemory):
                     (carrier, revision, generation)).fetchone()
                 if pending is not None:
                     return False
+                # Accidental repeats after uncertainty never spend again for
+                # the same confirmed revision; only an explicit retry flag or
+                # a fresh edited/confirmed revision queues a new attempt.
+                if not allow_uncertain_retry:
+                    uncertain = self._db.execute(
+                        "SELECT update_id FROM pilot_updates WHERE carrier=? "
+                        "AND action='opening' AND revision=? AND generation=? "
+                        "AND status='uncertain' LIMIT 1",
+                        (carrier, revision, generation)).fetchone()
+                    if uncertain is not None:
+                        return False
             if self._db.execute('SELECT count(*) FROM pilot_updates').fetchone()[0] >= 10000:
                 raise RuntimeError('Inbox capacity reached')
             with self._db:
@@ -258,14 +281,27 @@ class PilotInbox(PilotMemory):
                     "AND carrier=? AND claim=? AND status='processing'",(update_id,carrier,claim)).rowcount
                 if count != 1:raise ValueError('Stale delivery attempt')
 
-    def finish(self, user, chat, update_id, claim, *, success: bool):
-        """Record outcome only. No delivery or authorization follows from this status."""
+    def finish(self, user, chat, update_id, claim, *, success: bool, category=None):
+        """Record outcome only. No delivery or authorization follows from this status.
+
+        On failure only a sanitized category from FAILURE_CATEGORIES is kept;
+        exception text, payloads and provider detail are never persisted.
+        """
         with self._lock:
             carrier = self._carrier(user, chat)
+            kept = None if success else (
+                category if category in FAILURE_CATEGORIES else 'unknown')
             with self._db:
-                count = self._db.execute("UPDATE pilot_updates SET status=? WHERE update_id=? AND carrier=? "
+                count = self._db.execute(
+                    'UPDATE pilot_updates SET status=? '
+                    'WHERE update_id=? AND carrier=? '
                     "AND status IN ('processing','sending') AND claim=?",
-                    ('completed' if success else 'uncertain', update_id, carrier, claim)).rowcount
+                    ('completed' if success else 'uncertain',
+                     update_id, carrier, claim)).rowcount
+                if count == 1 and kept is not None:
+                    self._db.execute(
+                        'INSERT OR REPLACE INTO pilot_failure_categories '
+                        'VALUES (?,?)', (update_id, kept))
                 if count != 1:
                     raise ValueError('Stale task completion')
 

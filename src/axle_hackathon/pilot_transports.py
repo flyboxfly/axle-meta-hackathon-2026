@@ -110,7 +110,9 @@ class MetaResponsesClient:
         data=_json_post(self._client,'https://api.meta.ai/v1/responses',payload,
             {'Authorization':'Bearer '+self._key},seconds=self._seconds,limit=65536)
         try:
-            return SimpleNamespace(status=data['status'],output=[SimpleNamespace(**item) for item in data['output']])
+            return SimpleNamespace(status=data['status'],
+                output=[SimpleNamespace(**item) for item in data['output']],
+                id=data.get('id'),usage=data.get('usage'))
         except Exception:raise RuntimeError('Invalid provider response') from None
 
 

@@ -12,7 +12,7 @@ from .opening_intake import (
     REAL_INSTRUCTION_VERSION, WONDER_MODEL, build_extraction_request,
     normalize_screenshot, parse_extraction_response,
 )
-from .opening_workflow import OpeningPricing
+from .opening_workflow import OpeningPricing, pricing_blockers
 
 PRICING_INSTRUCTION_VERSION = 'opening-pricing-v1'
 PRICING_INSTRUCTIONS = '''You are Axle's pricing reviewer in an owner-operated opening-price test.
@@ -94,7 +94,10 @@ class OpeningDelegator:
             started = monotonic()
             try:
                 response = self._image.responses.create(**payload)
-            except Exception:
+            except Exception as exc:
+                if 'Invalid provider response' in str(exc):
+                    raise ValueError(
+                        'Invalid model extraction; no draft published') from None
                 raise RuntimeError('Model extraction failed; no automatic retry') from None
             try:
                 draft = parse_extraction_response(response)
@@ -145,6 +148,9 @@ class OpeningDelegator:
             if (type(revision) is not int or snapshot.revision != revision
                     or not snapshot.confirmed):
                 raise ValueError('Current confirmed revision required')
+            blockers = pricing_blockers(snapshot)
+            if blockers:
+                raise ValueError('Missing pricing inputs: ' + ', '.join(blockers))
             # No identity, consent tokens or session profile are transmitted.
             payload = json.dumps(dict(revision=revision,
                 facts=snapshot.draft.facts.model_dump(mode='json'),
@@ -159,7 +165,10 @@ class OpeningDelegator:
                 response = self._text.responses.create(model=WONDER_MODEL,
                     instructions=PRICING_INSTRUCTIONS, input=payload, tools=[TOOL],
                     parallel_tool_calls=False, max_output_tokens=1000)
-            except Exception:
+            except Exception as exc:
+                if 'Invalid provider response' in str(exc):
+                    raise ValueError(
+                        'Invalid model delegation; no evaluation published') from None
                 raise RuntimeError('Model selection failed; no automatic retry') from None
             try:
                 args = _single_call(response, TOOL['name'])

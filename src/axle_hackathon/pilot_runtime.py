@@ -63,7 +63,9 @@ class PilotWorker:
                 user,chat = next(k for k,v in s._bindings.items() if v == carrier)
                 access = s._active.get(carrier)
                 if access is None:
-                    with s._db:s._db.execute("UPDATE pilot_updates SET status='uncertain' WHERE update_id=?",(update,))
+                    with s._db:
+                        s._db.execute("UPDATE pilot_updates SET status='uncertain' WHERE update_id=?",(update,))
+                        s._db.execute("INSERT OR REPLACE INTO pilot_failure_categories VALUES (?,?)",(update,'consent_unavailable'))
                     return 'uncertain'
                 # run_evaluation claims under the inbox lock before provider work.
                 # Shared worker admission prevents another tick from taking this item.
@@ -72,7 +74,8 @@ class PilotWorker:
                 return 'completed'
             except Exception:
                 with s._lock, s._db:
-                    s._db.execute("UPDATE pilot_updates SET status='uncertain' WHERE update_id=? AND status='queued'",(update,))
+                    changed=s._db.execute("UPDATE pilot_updates SET status='uncertain' WHERE update_id=? AND status='queued'",(update,)).rowcount
+                    if changed:s._db.execute("INSERT OR REPLACE INTO pilot_failure_categories VALUES (?,?)",(update,'unknown'))
                 return 'uncertain'
         finally:self._busy.release()
 
@@ -140,7 +143,9 @@ class OpeningWorker:
                 user,chat = next(k for k,v in s._bindings.items() if v == carrier)
                 access = s._active.get(carrier)
                 if access is None:
-                    with s._db:s._db.execute("UPDATE pilot_updates SET status='uncertain' WHERE update_id=?",(update,))
+                    with s._db:
+                        s._db.execute("UPDATE pilot_updates SET status='uncertain' WHERE update_id=?",(update,))
+                        s._db.execute("INSERT OR REPLACE INTO pilot_failure_categories VALUES (?,?)",(update,'consent_unavailable'))
                     return 'uncertain'
                 # run_screenshot/run_opening claim under the inbox lock before provider work.
                 # Shared worker admission prevents another tick from taking this item.
@@ -152,6 +157,7 @@ class OpeningWorker:
                 return 'completed'
             except Exception:
                 with s._lock, s._db:
-                    s._db.execute("UPDATE pilot_updates SET status='uncertain' WHERE update_id=? AND status='queued'",(update,))
+                    changed=s._db.execute("UPDATE pilot_updates SET status='uncertain' WHERE update_id=? AND status='queued'",(update,)).rowcount
+                    if changed:s._db.execute("INSERT OR REPLACE INTO pilot_failure_categories VALUES (?,?)",(update,'unknown'))
                 return 'uncertain'
         finally:self._busy.release()

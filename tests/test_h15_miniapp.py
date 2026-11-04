@@ -830,3 +830,86 @@ def test_full_miniapp_journey_with_simulated_counteroffer(store, client):
     assert store._active['owner'].token not in raw
     flow = store._conversation_states['owner']
     assert flow['revision'] == 3
+
+
+def test_evaluate_missing_inputs_never_queues_or_spends(store, client):
+    consent(store)
+    data = profiled(client)
+    shot(store)
+    assert api(client, 'correct', data, request_id=rid(), expected_revision=1,
+               fields={'loaded_miles': 'unknown'}).status_code == 200
+    assert api(client, 'confirm', data, request_id=rid(), revision=2).status_code == 200
+    blocked = api(client, 'evaluate', data, request_id=rid(), revision=2)
+    assert blocked.status_code == 409
+    assert blocked.json()['missing'] == ['loaded_miles']
+    assert evaluation_rows(store) == []
+    assert attempts_used(store) == 1
+
+
+def tick_opening_failing(store):
+    inner = h15.delegator(store, [], image_text=h15.draft_text(), fail='model')
+    worker = OpeningWorker(store, inner, lambda *_: True,
+                           global_limit=10, carrier_limit=10)
+    assert worker.tick() == 'uncertain'
+
+
+def test_evaluate_after_uncertain_needs_explicit_retry(store, client):
+    consent(store)
+    data = confirmed_review(client, store)
+    assert api(client, 'evaluate', data, request_id=rid(), revision=2).status_code == 200
+    tick_opening_failing(store)
+    guarded = api(client, 'evaluate', data, request_id=rid(), revision=2)
+    assert guarded.status_code == 200
+    assert guarded.json()['evaluation']['state'] == 'uncertain'
+    assert guarded.json()['evaluation']['failure_category'] == 'provider_error'
+    assert len(evaluation_rows(store)) == 1
+    assert attempts_used(store) == 2
+    edit = api(client, 'correct', data, request_id=rid(), expected_revision=2,
+               fields={'handling_note': 'liftgate required'})
+    assert edit.json()['state']['review']['revision'] == 3
+    assert edit.json()['state']['stage'] == 'review'
+    assert api(client, 'confirm', data, request_id=rid(), revision=3).status_code == 200
+    assert api(client, 'evaluate', data, request_id=rid(), revision=3).status_code == 200
+    assert len(evaluation_rows(store)) == 2
+
+
+def test_explicit_retry_after_uncertain_queues_once(store, client):
+    consent(store)
+    data = confirmed_review(client, store)
+    assert api(client, 'evaluate', data, request_id=rid(), revision=2).status_code == 200
+    tick_opening_failing(store)
+    retry = api(client, 'evaluate', data, request_id=rid(), revision=2,
+                retry_uncertain=True)
+    assert retry.status_code == 200
+    assert retry.json()['evaluation']['state'] == 'pending'
+    assert len(evaluation_rows(store)) == 2
+    tick_opening(store)
+    assert api(client, 'state', data).json()['state']['stage'] == 'decided'
+
+
+def test_mileage_candidate_structured_and_adopted_explicitly(store, client):
+    conversation = consent(store)
+    data = profiled(client)
+    noted = json.dumps(dict(status='UNCONFIRMED',
+        facts=dict(payout=None, loaded_miles=None, deadhead_miles=None, weight_lbs=None),
+        evidence=dict(payout='', loaded_miles='', deadhead_miles='', weight_lbs=''),
+        issues=["Mileage labeled 'Est. mileage 480 mi' — verify before use."]))
+    token = store._active['owner'].token
+    h15.submit_shot(store, token)
+    inner = h15.delegator(store, [], image_text=noted)
+    worker = OpeningWorker(store, inner, lambda *_: True, global_limit=4, carrier_limit=4)
+    assert worker.tick() == 'completed'
+    review = api(client, 'state', data).json()['state']['review']
+    assert review['facts']['loaded_miles']['state'] == 'unknown'
+    assert review['mileage_proposals'] == ['480 mi']
+    assert review['mileage_candidates'] == [{
+        'field': 'loaded_miles', 'value': '480', 'unit': 'mi',
+        'source_text': "Mileage labeled 'Est. mileage 480 mi' — verify before use."}]
+    adopted = api(client, 'correct', data, request_id=rid(), expected_revision=1,
+                  fields={'loaded_miles': '480'})
+    assert adopted.status_code == 200
+    after = adopted.json()['state']['review']
+    assert after['revision'] == 2 and after['confirmed'] is False
+    assert after['facts']['loaded_miles']['value'] == '480'
+    assert after['facts']['loaded_miles']['source'] == 'carrier'
+    assert after['mileage_candidates'] == []

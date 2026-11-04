@@ -71,19 +71,54 @@ def effective_compensation(snapshot: OpeningSnapshot) -> tuple[Decimal | None, s
 _MILE_CANDIDATE = re.compile(r'(\d[\d,]*\.?\d*)\s*(?:mi|mile|miles)\b', re.IGNORECASE)
 
 
-def propose_mileage(snapshot: OpeningSnapshot) -> list[str]:
-    """Display-only estimate candidates from uncertainty notes. Never stored."""
+def mileage_candidates(snapshot: OpeningSnapshot) -> list[dict]:
+    """Structured estimated-mileage candidates from uncertainty notes.
+
+    Display/input data only: a candidate is never stored as loaded miles.
+    The carrier adopts one explicitly (a correction creates a new revision
+    with carrier source and needs fresh confirmation), or corrects it.
+    """
     if snapshot.draft.facts.loaded_miles is not None:
         return []
-    candidates = []
+    candidates, seen = [], set()
     for issue in snapshot.draft.issues:
         if 'est' not in issue.lower():
             continue
         for match in _MILE_CANDIDATE.finditer(issue):
-            candidates.append(match.group(1).replace(',', '') + ' mi')
+            try:
+                value = Decimal(match.group(1).replace(',', ''))
+            except Exception:
+                continue
+            if not value.is_finite() or not 0 < value <= 100000:
+                continue
+            text = format(value.normalize(), 'f') if value == value.to_integral() else str(value)
+            if text in seen:
+                continue
+            seen.add(text)
+            candidates.append(dict(field='loaded_miles', value=text, unit='mi',
+                                   source_text=issue[:240]))
             if len(candidates) >= 3:
                 return candidates
     return candidates
+
+
+def propose_mileage(snapshot: OpeningSnapshot) -> list[str]:
+    """Display labels for mileage_candidates. Never stored as miles."""
+    return [candidate['value'] + ' mi' for candidate in mileage_candidates(snapshot)]
+
+
+def pricing_blockers(snapshot: OpeningSnapshot) -> list[str]:
+    """Inputs that make deterministic pricing impossible, checked server-side.
+
+    Soft gaps (deadhead, reposition, CPM, target, minimum, schedule) are not
+    blockers: they price to a review-required / need-more-information result.
+    """
+    blockers = []
+    if snapshot.draft.facts.loaded_miles is None:
+        blockers.append('loaded_miles')
+    if snapshot.pricing.expense_claim != 'all_operating_expenses':
+        blockers.append('expense_claim')
+    return blockers
 
 
 def display_expense_claim(value):
@@ -129,9 +164,11 @@ def render_review(snapshot: OpeningSnapshot, profile: OpeningProfile | None = No
         lines.append(f'counteroffer note (unconfirmed): {snapshot.counter_note}')
     for issue in snapshot.draft.issues:
         lines.append('note: ' + issue)
-    for candidate in propose_mileage(snapshot):
+    for candidate in mileage_candidates(snapshot):
         lines.append('Possible pickup-to-delivery interpretation (UNCONFIRMED, from note): '
-                     + candidate + ' — confirm explicitly or correct.')
+                     + candidate['value'] + ' mi'
+                     + ' — to adopt it reply: loaded ' + candidate['value']
+                     + ' (new revision, fresh confirmation needed), or correct it.')
     lines.append('Use /confirm to confirm this exact revision, or correct a field.')
     return '\n'.join(lines)
 

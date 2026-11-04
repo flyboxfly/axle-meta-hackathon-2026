@@ -57,7 +57,9 @@ function reviewRows(r) {
   h += '<h2>Compensation</h2>' + fieldRow('Owner counteroffer $', r.counter_offer) + fieldRow('Evaluated compensation $', r.evaluated_compensation);
   if (r.counter_note && r.counter_note.value) h += fieldRow('Counter note', r.counter_note);
   if (r.issues && r.issues.length) h += '<div class="notice">Unresolved notes:<br>• ' + r.issues.map(esc).join('<br>• ') + '</div>';
-  if (r.mileage_proposals && r.mileage_proposals.length) h += '<div class="notice">Possible pickup-to-delivery interpretation (UNCONFIRMED, from note): ' + r.mileage_proposals.map(esc).join(', ') + ' — confirm explicitly or correct.</div>';
+  if (r.mileage_candidates && r.mileage_candidates.length) {
+    for (const c of r.mileage_candidates) h += '<div class="notice">Possible pickup-to-delivery interpretation (UNCONFIRMED, from note): ' + esc(c.value) + ' mi — this estimate is not loaded miles. <button type="button" class="secondary adopt-btn" data-value="' + esc(c.value) + '">Use ' + esc(c.value) + ' mi as loaded miles</button> Adopting creates a new revision and needs fresh confirmation.</div>';
+  } else if (r.mileage_proposals && r.mileage_proposals.length) h += '<div class="notice">Possible pickup-to-delivery interpretation (UNCONFIRMED, from note): ' + r.mileage_proposals.map(esc).join(', ') + ' — confirm explicitly or correct.</div>';
   return h;
 }
 function money(v) { return v === null || v === undefined ? 'unknown' : '$' + v; }
@@ -104,7 +106,9 @@ function render(state) {
     showOnly('screen-review');
   } else if (state.stage === 'confirmed') {
     el('confirmedBody').innerHTML = reviewRows(state.review);
-    el('confirmedEval').innerHTML = state.evaluation ? '<div class="warn">Last evaluation: ' + esc(state.evaluation.state) + '. No automatic retry; requesting again queues one new budgeted attempt.</div>' : '';
+    const uncertain = state.evaluation && state.evaluation.state === 'uncertain';
+    el('confirmedEval').innerHTML = state.evaluation ? '<div class="warn">Last evaluation: ' + esc(state.evaluation.state) + (state.evaluation.failure_category ? ' (' + esc(state.evaluation.failure_category) + ')' : '') + '. No automatic retry was made. Edit any detail for a fresh revision, or use the button below to explicitly request one new budgeted attempt.</div>' : '';
+    el('requestBid').textContent = uncertain ? 'Request again — one new budgeted attempt' : 'Request opening bid';
     showOnly('screen-confirmed');
   } else if (state.stage === 'evaluating') {
     showOnly('screen-evaluating');
@@ -157,7 +161,23 @@ el('correctForm').addEventListener('submit', e => {
   mutate('/miniapp/api/correct', { request_id: rid(), expected_revision: current.review.revision, fields }).then(ok => { if (ok) e.target.reset(); });
 });
 el('reviewConfirm').addEventListener('click', () => { if (!busy && current && current.review) mutate('/miniapp/api/confirm', { request_id: rid(), revision: current.review.revision }); });
-el('requestBid').addEventListener('click', () => { if (!busy && current && current.review) mutate('/miniapp/api/evaluate', { request_id: rid(), revision: current.review.revision }); });
+el('requestBid').addEventListener('click', () => {
+  if (busy || !current || !current.review) return;
+  const body = { request_id: rid(), revision: current.review.revision };
+  if (current.evaluation && current.evaluation.state === 'uncertain') body.retry_uncertain = true;
+  mutate('/miniapp/api/evaluate', body);
+});
+document.addEventListener('click', e => {
+  const btn = e.target && e.target.closest ? e.target.closest('.adopt-btn') : null;
+  if (!btn || busy || !current || !current.review) return;
+  mutate('/miniapp/api/correct', { request_id: rid(), expected_revision: current.review.revision, fields: { loaded_miles: btn.dataset.value } });
+});
+el('confirmCorrectForm').addEventListener('submit', e => {
+  e.preventDefault(); if (busy || !current || !current.review) return;
+  const fields = formFields(e.target);
+  if (!Object.keys(fields).length) { showError('Enter at least one value.'); return; }
+  mutate('/miniapp/api/correct', { request_id: rid(), expected_revision: current.review.revision, fields }).then(ok => { if (ok) e.target.reset(); });
+});
 el('counterForm').addEventListener('submit', e => {
   e.preventDefault(); if (busy || !current || !current.review) return;
   mutate('/miniapp/api/correct', { request_id: rid(), expected_revision: current.review.revision, fields: formFields(e.target) }).then(ok => { if (ok) e.target.reset(); });
