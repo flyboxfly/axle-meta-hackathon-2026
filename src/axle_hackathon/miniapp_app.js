@@ -39,7 +39,8 @@ function fieldRow(label, field) {
   else if (field.value === 'all_operating_expenses') shown = 'All operating expenses';
   else shown = esc(field.value);
   const src = field && field.source ? '<span class="badge src-' + esc(String(field.source).split(' ')[0]) + '">' + esc(field.source) + '</span>' : '';
-  return '<div class="row"><span class="k">' + esc(label) + '</span><span class="v ' + cls + '">' + shown + src + '</span></div>';
+  const vcls = cls + (String(label).includes('$') ? ' money' : '');
+  return '<div class="row"><span class="k">' + esc(label) + '</span><span class="v ' + vcls + '">' + shown + src + '</span></div>';
 }
 function profileRows(p) {
   if (!p) return '<p>No profile yet.</p>';

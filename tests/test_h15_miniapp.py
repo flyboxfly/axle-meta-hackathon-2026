@@ -1027,3 +1027,13 @@ def test_result_labels_match_calculation_source(store, client):
     assert "if (kind === 'opening_bid') return 'Suggested price above operating cost';" in script
     assert "if (r.compensation_source === 'owner counteroffer') return 'Offer above operating cost';" in script
     assert "return 'Posted offer above operating cost';" in script
+
+
+def test_money_values_stay_on_one_line():
+    from pathlib import Path
+    root = Path(__file__).resolve().parents[1] / 'src' / 'axle_hackathon'
+    html = (root / 'miniapp.html').read_text()
+    script = (root / 'miniapp_app.js').read_text()
+    assert '.row .v.money{white-space:nowrap;flex:none}' in html
+    assert '.row .k{color:var(--muted);flex:1 1 auto;min-width:0}' in html
+    assert "String(label).includes('$') ? ' money' : ''" in script
