@@ -333,17 +333,14 @@ def test_stepper_short_label_only_in_progress_indicator(store, client):
     page = client.get('/miniapp/').text
     steps = re.search(r'<ol class="steps".*?</ol>', page, re.S).group(0)
     assert steps.count('<li') == 5
-    assert 'Srnshot' in steps
-    visible = steps.replace('aria-label="2 · Screenshot"', '')
-    assert 'Screenshot' not in visible
-    assert 'aria-label="2 · Screenshot"' in steps
-    assert 'aria-hidden="true">2 · Srnshot<' in steps
+    for label in ('Your rates', 'Screenshot', 'Check details', 'Confirm', 'Your price'):
+        assert label in steps
     assert 'white-space:nowrap' in page
     assert '@media(max-width:380px)' in page
     assert 'STEP 2 · SCREENSHOT' in page
     assert 'aria-label="Progress"' in page
     shipped_js = Path('src/axle_hackathon/miniapp_app.js').read_text()
-    assert 'Screenshot facts' in shipped_js
+    assert 'From the screenshot' in shipped_js
     assert 'Srnshot' not in shipped_js
 
 
@@ -719,11 +716,19 @@ def test_unknown_and_explicit_zero_through_miniapp(store, client):
     assert review['facts']['deadhead_miles']['state'] == 'unknown'
     assert review['pricing']['reposition_miles']['state'] == 'explicit_zero'
     assert api(client, 'confirm', data, request_id=rid(), revision=2).status_code == 200
-    assert api(client, 'evaluate', data, request_id=rid(), revision=2).status_code == 200
+    blocked = api(client, 'evaluate', data, request_id=rid(), revision=2)
+    assert blocked.status_code == 409
+    assert blocked.json()['missing'] == ['deadhead_miles']
+    assert evaluation_rows(store) == []
+    # Explicit zero for miles to pickup is valid and prices normally.
+    assert api(client, 'correct', data, request_id=rid(), expected_revision=2,
+               fields={'deadhead_miles': '0'}).status_code == 200
+    assert api(client, 'confirm', data, request_id=rid(), revision=3).status_code == 200
+    assert api(client, 'evaluate', data, request_id=rid(), revision=3).status_code == 200
     tick_opening(store)
     decided = api(client, 'state', data).json()['state']
-    assert decided['result']['decision'] == 'NEED_MORE_INFORMATION'
-    assert 'deadhead_miles' in decided['result']['missing_information']
+    assert decided['result']['decision'] == 'NEGOTIATE'
+    assert decided['result']['total_miles'] == '180'
 
 
 def test_forget_via_miniapp(store, client):
@@ -841,7 +846,8 @@ def test_evaluate_missing_inputs_never_queues_or_spends(store, client):
     assert api(client, 'confirm', data, request_id=rid(), revision=2).status_code == 200
     blocked = api(client, 'evaluate', data, request_id=rid(), revision=2)
     assert blocked.status_code == 409
-    assert blocked.json()['missing'] == ['loaded_miles']
+    assert blocked.json()['missing'] == ['loaded_miles', 'reposition_miles']
+    assert 'miles after delivery' in blocked.json()['error']
     assert evaluation_rows(store) == []
     assert attempts_used(store) == 1
 
@@ -913,3 +919,25 @@ def test_mileage_candidate_structured_and_adopted_explicitly(store, client):
     assert after['facts']['loaded_miles']['value'] == '480'
     assert after['facts']['loaded_miles']['source'] == 'carrier'
     assert after['mileage_candidates'] == []
+
+
+def test_miniapp_presentation_uses_familiar_wording():
+    from pathlib import Path
+    root = Path(__file__).resolve().parents[1] / 'src' / 'axle_hackathon'
+    html = (root / 'miniapp.html').read_text()
+    script = (root / 'miniapp_app.js').read_text()
+    for text in (html, script):
+        assert 'Your cost per mile' in text or 'Your asking rate' in text
+        assert 'net profit' not in text.lower()
+    assert 'Your cost per mile' in html and 'Your asking rate per mile' in html
+    assert 'Miles to pickup' in html and 'Miles after delivery' in html
+    assert 'both rates apply to all reviewed trip miles' in html.lower()
+    assert 'Lowest total you will accept' in html
+    assert 'Suggested asking price:' in script
+    assert 'Draft message to the broker' in script
+    assert 'Above operating cost' in script
+    assert 'Target all-mile RPM' not in html + script
+    assert 'Deadhead' not in html + script
+    # Logo, wordmark and the draft/not-sent notice stay visible.
+    assert '/miniapp/logo.png' in html and 'axle<span>.</span>' in html
+    assert 'DRAFT — NOT SENT' in html + script

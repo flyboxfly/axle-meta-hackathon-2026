@@ -45,7 +45,8 @@ from fastapi.responses import HTMLResponse, JSONResponse
 
 from .opening_telegram import (FIELD_LABELS, apply_pairs_to_snapshot,
                                negotiation_guidance, validate_profile_pairs)
-from .opening_workflow import mileage_candidates, pricing_blockers, propose_mileage
+from .opening_workflow import (mileage_candidates, missing_input_labels,
+                               pricing_blockers, propose_mileage)
 from .remote_app import _is_valid_hostname
 
 INITDATA_MAX_CHARS = 8192
@@ -723,7 +724,8 @@ def mount_miniapp(app, inbox, *, bot_token, allowed_host):
                     complete_request(inbox, request_id)
                     return JSONResponse(
                         {'ok': False,
-                         'error': 'Missing pricing inputs: ' + ', '.join(blockers),
+                         'error': 'Add these before pricing: '
+                                  + ', '.join(missing_input_labels(blockers)),
                          'missing': blockers,
                          'state': build_state(inbox, user, chat)},
                         status_code=409, headers=dict(NO_STORE))

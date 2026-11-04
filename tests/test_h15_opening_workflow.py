@@ -157,9 +157,10 @@ def test_correction_invalidates_confirmation_and_stale_price_rejected(store):
 
 def test_inflight_correction_blocks_old_pricing_result(store):
     access, conversation, _ = ready_revision(store)
-    conversation.handle(1, 1, 'cpm 1.25')
-    store._opening.confirm(1, 1, 2)
-    store.submit(1, 1, 61, 'opening', token=access.token, revision=2, message_id=61)
+    for correction in ('cpm 1.25', 'target 2.50', 'minimum 100', 'reposition 0'):
+        conversation.handle(1, 1, correction)
+    store._opening.confirm(1, 1, 5)
+    store.submit(1, 1, 61, 'opening', token=access.token, revision=5, message_id=61)
     sent, entered, release = [], Event(), Event()
     inner = delegator(store, [], image_text=draft_text())
     real = inner.select_pricing
@@ -184,9 +185,10 @@ def test_inflight_correction_blocks_old_pricing_result(store):
 
 def test_consent_withdrawn_inflight_blocks_delivery(store):
     access, conversation, _ = ready_revision(store)
-    conversation.handle(1, 1, 'cpm 1.25')
-    store._opening.confirm(1, 1, 2)
-    store.submit(1, 1, 62, 'opening', token=access.token, revision=2, message_id=62)
+    for correction in ('cpm 1.25', 'target 2.50', 'minimum 100', 'reposition 0'):
+        conversation.handle(1, 1, correction)
+    store._opening.confirm(1, 1, 5)
+    store.submit(1, 1, 62, 'opening', token=access.token, revision=5, message_id=62)
     sent, entered, release = [], Event(), Event()
     inner = delegator(store, [], image_text=draft_text())
     real = inner.select_pricing
@@ -986,7 +988,8 @@ def test_prepare_opening_cli_writes_real_config(tmp_path, monkeypatch, capsys):
 def test_pricing_missing_inputs_checked_before_model_call(store):
     from axle_hackathon.opening_workflow import pricing_blockers
     access, conversation, _ = ready_revision(store)
-    conversation.handle(1, 1, 'cpm 1.25')
+    for correction in ('cpm 1.25', 'target 2.50', 'minimum 100', 'reposition 0'):
+        conversation.handle(1, 1, correction)
     conversation.handle(1, 1, 'loaded unknown')
     snapshot = store._opening.get(1, 1)
     assert pricing_blockers(snapshot) == ['loaded_miles']

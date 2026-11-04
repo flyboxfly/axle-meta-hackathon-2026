@@ -218,10 +218,10 @@ def test_source_labels_and_note_retirement(store):
     conversation = journey(store, 'deadhead 40\navailability feasible')
     review = conversation.handle(1, 1, 'target 2.60')
     assert '[screenshot]' in review and '[profile]' in review and '[carrier]' in review
-    assert 'target all-mile RPM: 2.60 [carrier]' in review
-    assert 'deadhead miles: 40 [carrier]' in review
-    assert 'operating CPM: 1.25 [profile]' in review
-    assert 'payout: 420 [screenshot]' in review
+    assert 'your asking rate per mile: 2.60 [carrier]' in review
+    assert 'miles to pickup: 40 [carrier]' in review
+    assert 'your cost per mile: 1.25 [profile]' in review
+    assert 'posted pay: 420 [screenshot]' in review
 
 
 def test_unresolved_warnings_kept_after_correction(store):
@@ -321,15 +321,30 @@ def test_offer_accept_and_minimum_floor(store):
     assert 'I can do it at $400.00' in floor.split('Broker wording')[1]
 
 
-def test_unknown_segments_stay_unknown_in_evaluation(store):
-    missing_repo = price_case(store, ('target 2.50', 'cpm 1.25', 'minimum 100',
-                                      'counter 900'))
-    assert 'NEED_MORE_INFORMATION' in missing_repo
-    assert 'reposition_miles' in missing_repo
-    missing_dh = price_case(store, ('target 2.50', 'cpm 1.25', 'minimum 100',
-                                    'reposition 20', 'deadhead unknown', 'counter 900'),
-                            base=70)
-    assert 'NEED_MORE_INFORMATION' in missing_dh and 'deadhead_miles' in missing_dh
+def test_unknown_segments_block_pricing_before_spending(store):
+    # Miles to pickup and miles after delivery are required for a usable
+    # bid: pricing is refused before any queue, reservation or model call.
+    for base, (corrections, missing) in enumerate((
+            (('target 2.50', 'cpm 1.25', 'minimum 100', 'counter 900'),
+             'reposition_miles'),
+            (('target 2.50', 'cpm 1.25', 'minimum 100', 'reposition 20',
+              'deadhead unknown', 'counter 900'), 'deadhead_miles'))):
+        conversation = journey(store, 'availability feasible', update=60 + base * 10,
+                               limits=dict(global_limit=10, carrier_limit=10))
+        for correction in corrections:
+            conversation.handle(1, 1, correction)
+        snapshot = store._opening.get(1, 1)
+        flow = store._conversation_states['owner']
+        conversation.handle(1, 1, f"/confirm {flow['nonce']}")
+        token = store._active['owner'].token
+        before = store._db.execute(
+            'SELECT COALESCE(SUM(attempts),0) FROM pilot_budget').fetchone()[0]
+        with pytest.raises(ValueError, match=missing):
+            store.submit(1, 1, 61 + base * 10, 'opening', token=token,
+                         revision=snapshot.revision, message_id=61 + base * 10)
+        assert store._db.execute(
+            'SELECT COALESCE(SUM(attempts),0) FROM pilot_budget').fetchone()[0] == before
+        store.forget(1, 1)
 
 
 def test_explicit_zero_segments_accepted(store):

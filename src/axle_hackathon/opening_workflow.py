@@ -108,17 +108,48 @@ def propose_mileage(snapshot: OpeningSnapshot) -> list[str]:
 
 
 def pricing_blockers(snapshot: OpeningSnapshot) -> list[str]:
-    """Inputs that make deterministic pricing impossible, checked server-side.
+    """Every input a usable bid needs, checked server-side before spending.
 
-    Soft gaps (deadhead, reposition, CPM, target, minimum, schedule) are not
-    blockers: they price to a review-required / need-more-information result.
+    Loaded, pickup and after-delivery miles, all-operating-expense CPM,
+    asking rate and minimum charge (explicit zero allowed where permitted)
+    must all be present before any pricing queue, reservation or model
+    call, on both the bot and Mini App paths. Schedule, cargo, weight and
+    handling stay advisory: they never block a preliminary price.
     """
+    facts, pricing = snapshot.draft.facts, snapshot.pricing
     blockers = []
-    if snapshot.draft.facts.loaded_miles is None:
+    if facts.loaded_miles is None:
         blockers.append('loaded_miles')
-    if snapshot.pricing.expense_claim != 'all_operating_expenses':
+    if facts.deadhead_miles is None:
+        blockers.append('deadhead_miles')
+    if pricing.reposition_miles is None:
+        blockers.append('reposition_miles')
+    if pricing.operating_cpm is None:
+        blockers.append('operating_cpm')
+    if pricing.target_all_mile_rpm is None:
+        blockers.append('target_all_mile_rpm')
+    if pricing.minimum_job_charge is None:
+        blockers.append('minimum_job_charge')
+    if pricing.expense_claim != 'all_operating_expenses':
         blockers.append('expense_claim')
     return blockers
+
+
+# Familiar carrier-facing labels for required pricing inputs; underlying
+# field names, Decimal values and provenance are unchanged.
+MISSING_INPUT_LABELS = {
+    'loaded_miles': 'loaded miles',
+    'deadhead_miles': 'miles to pickup',
+    'reposition_miles': 'miles after delivery',
+    'operating_cpm': 'your cost per mile',
+    'target_all_mile_rpm': 'your asking rate per mile',
+    'minimum_job_charge': 'lowest total you will accept',
+    'expense_claim': 'all-operating-expense cost basis',
+}
+
+
+def missing_input_labels(blockers) -> list[str]:
+    return [MISSING_INPUT_LABELS.get(name, name) for name in blockers]
 
 
 def display_expense_claim(value):
@@ -141,20 +172,20 @@ def render_review(snapshot: OpeningSnapshot, profile: OpeningProfile | None = No
         return f'{value} [{snapshot.sources.get(name, "carrier")}]'
     status = 'CONFIRMED' if snapshot.confirmed else 'UNCONFIRMED'
     lines = [f'OPENING DRAFT revision {snapshot.revision} — {status}',
-        'Screenshot-derived facts (verify every value):',
-        f'payout: {tagged("payout", facts.payout)}',
+        'From your screenshot (check every value):',
+        f'posted pay: {tagged("payout", facts.payout)}',
         f'loaded miles: {tagged("loaded_miles", facts.loaded_miles)}',
-        f'deadhead miles: {tagged("deadhead_miles", facts.deadhead_miles)}',
+        f'miles to pickup: {tagged("deadhead_miles", facts.deadhead_miles)}',
         f'weight lbs: {tagged("weight_lbs", facts.weight_lbs)}',
-        'Session profile pricing (confirmed before upload unless edited):',
-        f'target all-mile RPM: {tagged("target_all_mile_rpm", pricing.target_all_mile_rpm)}',
-        f'operating CPM: {tagged("operating_cpm", pricing.operating_cpm)}',
-        f'expense claim: {display_expense_claim(pricing.expense_claim)}',
-        f'minimum job charge: {tagged("minimum_job_charge", pricing.minimum_job_charge)}',
+        'Your rates (both apply to all trip miles below):',
+        f'your asking rate per mile: {tagged("target_all_mile_rpm", pricing.target_all_mile_rpm)}',
+        f'your cost per mile: {tagged("operating_cpm", pricing.operating_cpm)}',
+        f'cost basis: {display_expense_claim(pricing.expense_claim)}',
+        f'lowest total you will accept: {tagged("minimum_job_charge", pricing.minimum_job_charge)}',
         f'equipment: {shown(profile.equipment) if profile else "unknown"} [profile]',
         f'operating context: {shown(profile.operating_context) if profile else "unknown"} [profile]',
-        'Trip context for this revision:',
-        f'reposition miles: {tagged("reposition_miles", pricing.reposition_miles)}',
+        'This trip:',
+        f'miles after delivery: {tagged("reposition_miles", pricing.reposition_miles)}',
         f'expected duration: {tagged("duration_note", trip.duration_note)}',
         f'availability: {tagged("availability", trip.availability if trip.availability != "unknown" else None)}',
         f'handling notes: {tagged("handling_note", trip.handling_note)}']

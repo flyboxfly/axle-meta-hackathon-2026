@@ -43,22 +43,22 @@ function fieldRow(label, field) {
 }
 function profileRows(p) {
   if (!p) return '<p>No profile yet.</p>';
-  return fieldRow('Operating CPM', p.operating_cpm) + fieldRow('Expense basis', p.expense_claim)
-    + fieldRow('Target all-mile RPM', p.target_all_mile_rpm) + fieldRow('Minimum job charge', p.minimum_job_charge)
-    + fieldRow('Equipment', p.equipment) + fieldRow('Operating context', p.operating_context);
+  return fieldRow('Your cost per mile', p.operating_cpm) + fieldRow('Cost basis', p.expense_claim)
+    + fieldRow('Your asking rate per mile', p.target_all_mile_rpm) + fieldRow('Lowest total you will accept', p.minimum_job_charge)
+    + fieldRow('Truck', p.equipment) + fieldRow('About your work', p.operating_context);
 }
 function reviewRows(r) {
-  let h = '<h2>Screenshot facts</h2>' + fieldRow('Posted payout $', r.facts.payout) + fieldRow('Loaded miles', r.facts.loaded_miles)
-    + fieldRow('Deadhead miles', r.facts.deadhead_miles) + fieldRow('Weight lbs', r.facts.weight_lbs);
-  h += '<h2>Session pricing</h2>' + fieldRow('Target all-mile RPM', r.pricing.target_all_mile_rpm) + fieldRow('Operating CPM', r.pricing.operating_cpm)
-    + fieldRow('Expense basis', r.pricing.expense_claim) + fieldRow('Minimum job charge', r.pricing.minimum_job_charge)
-    + fieldRow('Reposition miles', r.pricing.reposition_miles);
-  h += '<h2>Trip context</h2>' + fieldRow('Duration', r.trip.duration_note) + fieldRow('Availability', r.trip.availability) + fieldRow('Handling', r.trip.handling_note);
-  h += '<h2>Compensation</h2>' + fieldRow('Owner counteroffer $', r.counter_offer) + fieldRow('Evaluated compensation $', r.evaluated_compensation);
+  let h = '<h2>From the screenshot</h2>' + fieldRow('Posted pay $', r.facts.payout) + fieldRow('Loaded miles', r.facts.loaded_miles)
+    + fieldRow('Miles to pickup', r.facts.deadhead_miles) + fieldRow('Weight lbs', r.facts.weight_lbs);
+  h += '<h2>Your rates</h2>' + fieldRow('Your asking rate per mile', r.pricing.target_all_mile_rpm) + fieldRow('Your cost per mile', r.pricing.operating_cpm)
+    + fieldRow('Cost basis', r.pricing.expense_claim) + fieldRow('Lowest total you will accept', r.pricing.minimum_job_charge);
+  h += '<h2>This trip</h2>' + fieldRow('Miles after delivery', r.pricing.reposition_miles)
+    + fieldRow('How long it takes', r.trip.duration_note) + fieldRow('Timing works?', r.trip.availability) + fieldRow('Loading or handling needs', r.trip.handling_note);
+  h += '<h2>Pay for this check</h2>' + fieldRow('Broker offer $', r.counter_offer) + fieldRow('Pay being checked $', r.evaluated_compensation);
   if (r.counter_note && r.counter_note.value) h += fieldRow('Counter note', r.counter_note);
   if (r.issues && r.issues.length) h += '<div class="notice">Unresolved notes:<br>• ' + r.issues.map(esc).join('<br>• ') + '</div>';
   if (r.mileage_candidates && r.mileage_candidates.length) {
-    for (const c of r.mileage_candidates) h += '<div class="notice">Possible pickup-to-delivery interpretation (UNCONFIRMED, from note): ' + esc(c.value) + ' mi — this estimate is not loaded miles. <button type="button" class="secondary adopt-btn" data-value="' + esc(c.value) + '">Use ' + esc(c.value) + ' mi as loaded miles</button> Adopting creates a new revision and needs fresh confirmation.</div>';
+    for (const c of r.mileage_candidates) h += '<div class="notice">Estimated miles from the screenshot note: ' + esc(c.value) + ' mi — not confirmed yet. <button type="button" class="secondary adopt-btn" data-value="' + esc(c.value) + '">Use ' + esc(c.value) + ' mi</button> Using it saves as your value; you will confirm again.</div>';
   } else if (r.mileage_proposals && r.mileage_proposals.length) h += '<div class="notice">Possible pickup-to-delivery interpretation (UNCONFIRMED, from note): ' + r.mileage_proposals.map(esc).join(', ') + ' — confirm explicitly or correct.</div>';
   return h;
 }
@@ -66,27 +66,75 @@ function money(v) { return v === null || v === undefined ? 'unknown' : '$' + v; 
 function resultCard(kind, r) {
   let h = '';
   if (kind === 'opening_bid') {
-    el('decisionStatus').textContent = r.opening_bid !== null ? 'PRELIMINARY OPENING' : 'PRICING REVIEW';
-    el('decisionTitle').textContent = r.opening_bid !== null ? 'Opening bid: $' + r.opening_bid : 'Review needed before pricing';
-    h = '<div class="metrics"><div class="metric"><span class="value">' + esc(r.total_miles || '?') + '</span><small>TOTAL MILES</small></div>'
-      + '<div class="metric"><span class="value">' + money(r.estimated_operating_cost) + '</span><small>EST. OPERATING COST</small></div>'
-      + '<div class="metric"><span class="value">' + money(r.target_revenue) + '</span><small>TARGET REVENUE</small></div></div>';
-    if (r.opening_bid !== null) h += fieldRow('Opening bid $', { value: r.opening_bid, state: 'known' }) + fieldRow('Est. operating surplus $', { value: r.estimated_operating_surplus, state: 'known' });
-    else h += '<div class="warn">Missing: ' + esc((r.missing || []).join(', ') || 'review required') + (r.pricing_issue ? '<br>' + esc(r.pricing_issue) : '') + '</div>';
+    if (r.opening_bid !== null) {
+      el('decisionStatus').textContent = 'DRAFT — NOT SENT · PRELIMINARY ESTIMATE';
+      el('decisionTitle').textContent = 'Suggested asking price: $' + r.opening_bid;
+      h = '<p>That covers your estimated operating cost of ' + money(r.estimated_operating_cost)
+        + ' across ' + esc(r.total_miles || '?') + ' miles and leaves ' + money(r.estimated_operating_surplus)
+        + ' above operating cost.</p>'
+        + '<div class="metrics"><div class="metric"><span class="value">' + esc(r.total_miles || '?') + '</span><small>TOTAL MILES</small></div>'
+        + '<div class="metric"><span class="value">' + money(r.estimated_operating_cost) + '</span><small>EST. OPERATING COST</small></div>'
+        + '<div class="metric"><span class="value">' + money(r.estimated_operating_surplus) + '</span><small>ABOVE OPERATING COST</small></div></div>';
+    } else {
+      el('decisionStatus').textContent = 'DRAFT — NOT SENT';
+      el('decisionTitle').textContent = 'We cannot suggest a price yet';
+      h = '<div class="warn">' + esc(r.pricing_issue || 'Some details need review.')
+        + '<br>What to do: check the miles, lower your asking rate or cost per mile, save the changes and confirm again.</div>';
+    }
+  } else if (r.decision === 'ACCEPT') {
+    el('decisionStatus').textContent = 'DRAFT — NOT SENT · PRELIMINARY ESTIMATE';
+    el('decisionTitle').textContent = 'This offer clears your checks';
+    h = '<p>The offer of ' + money(r.compensation) + ' is ' + money(r.estimated_operating_surplus)
+      + ' above your estimated operating cost of ' + money(r.estimated_operating_cost)
+      + ' across ' + esc(r.total_miles || '?') + ' miles, and clears your lowest total.</p>'
+      + fieldRow('Offer $', { value: r.compensation, state: 'known' })
+      + fieldRow('Est. operating cost $', { value: r.estimated_operating_cost, state: 'known' })
+      + fieldRow('Above operating cost $', { value: r.estimated_operating_surplus, state: 'known' });
+  } else if (r.decision === 'NEGOTIATE') {
+    el('decisionStatus').textContent = 'DRAFT — NOT SENT · PRELIMINARY ESTIMATE';
+    let ask = null;
+    if (r.target_revenue !== null && r.minimum_job_charge !== null && r.estimated_operating_cost !== null) {
+      const candidate = Math.max(parseFloat(r.target_revenue), parseFloat(r.minimum_job_charge));
+      if (candidate > parseFloat(r.estimated_operating_cost)) ask = candidate.toFixed(2);
+    }
+    if (ask !== null) {
+      el('decisionTitle').textContent = 'Suggested asking price: $' + ask;
+      h = '<p>The current offer of ' + money(r.compensation) + ' is ' + money(r.revenue_gap_to_target)
+        + ' below what your asking rate needs across ' + esc(r.total_miles || '?')
+        + ' miles. Your estimated operating cost is ' + money(r.estimated_operating_cost) + '.</p>';
+    } else {
+      el('decisionTitle').textContent = 'The current terms need work';
+      h = '<div class="warn">No suggested price follows from these details. Check the miles and rates, save the changes and confirm again.</div>';
+    }
+    h += fieldRow('Est. operating cost $', { value: r.estimated_operating_cost, state: 'known' });
+    if (r.estimated_operating_surplus !== null && r.estimated_operating_surplus !== undefined)
+      h += fieldRow('Above operating cost $', { value: r.estimated_operating_surplus, state: r.estimated_operating_surplus === null ? 'unknown' : 'known' });
+  } else if (r.decision === 'DECLINE') {
+    el('decisionStatus').textContent = 'DRAFT — NOT SENT';
+    el('decisionTitle').textContent = 'This trip does not work';
+    h = '<div class="warn">You marked the timing as not workable. What to do: only a timing change, saved as new details and confirmed again, can change this.</div>';
   } else {
-    const titles = { ACCEPT: 'The supplied checks pass.', NEGOTIATE: 'The current terms need work.', DECLINE: 'This schedule does not work.', NEED_MORE_INFORMATION: 'Add facts before deciding.' };
-    el('decisionStatus').textContent = r.decision.replace(/_/g, ' ');
-    el('decisionTitle').textContent = titles[r.decision] || r.decision;
-    h = '<div class="metrics"><div class="metric"><span class="value">' + money(r.compensation) + '</span><small>COMPENSATION</small></div>'
-      + '<div class="metric"><span class="value">' + esc(r.total_miles || '?') + '</span><small>TOTAL MILES</small></div>'
-      + '<div class="metric"><span class="value">' + (r.revenue_gap_to_target === null ? '—' : '$' + r.revenue_gap_to_target) + '</span><small>GAP TO TARGET</small></div></div>';
-    h += fieldRow('Compensation source', { value: r.compensation_source, state: 'known' }) + fieldRow('Est. operating cost $', { value: r.estimated_operating_cost, state: r.estimated_operating_cost === null ? 'unknown' : 'known' })
-      + fieldRow('Target revenue $', { value: r.target_revenue, state: r.target_revenue === null ? 'unknown' : 'known' });
-    if (r.estimated_operating_surplus !== null && r.estimated_operating_surplus !== undefined) h += fieldRow('Est. operating surplus $', { value: r.estimated_operating_surplus, state: 'known' });
-    if (r.missing_information && r.missing_information.length) h += '<div class="warn">Missing: ' + r.missing_information.map(esc).join(', ') + '</div>';
-    h += '<div class="notice">Limits: stops, hours-of-service, routing and market conditions are not modeled; equipment match and schedule are carrier-supplied, not verified. A decision here is never a booking.</div>';
+    el('decisionStatus').textContent = 'DRAFT — NOT SENT';
+    el('decisionTitle').textContent = 'One more detail needed';
+    const friendly = (r.missing_information || []).map(m => m === 'schedule_feasibility' ? 'whether the timing works for you' : m).join(', ');
+    h = '<div class="warn">Add: ' + esc(friendly || 'the missing details')
+      + '. Save the change above and confirm again — no price is suggested until then.</div>'
+      + fieldRow('Est. operating cost $', { value: r.estimated_operating_cost, state: r.estimated_operating_cost === null ? 'unknown' : 'known' });
   }
   return h;
+}
+function brokerDraft(guidance) {
+  if (!guidance) return '';
+  const marker = 'Broker wording';
+  const at = guidance.indexOf(marker);
+  if (at < 0) return '';
+  const quoted = guidance.slice(at).split('\n').map(l => l.trim()).find(l => l.startsWith('"'));
+  return quoted || '';
+}
+function howWorkedOut(guidance) {
+  if (!guidance) return '';
+  const at = guidance.indexOf('Broker wording');
+  return (at >= 0 ? guidance.slice(0, at) : guidance).trim();
 }
 function render(state) {
   current = state;
@@ -100,22 +148,28 @@ function render(state) {
     showOnly('screen-photo');
     poll(4000);
   } else if (state.stage === 'review') {
-    el('reviewStatus').textContent = 'STEP 3 · REVIEW REVISION ' + state.review.revision;
+    el('reviewStatus').textContent = 'STEP 3 · CHECK DETAILS';
     el('reviewBody').innerHTML = reviewRows(state.review);
-    el('reviewConfirm').textContent = 'Confirm exact revision ' + state.review.revision;
+    el('reviewConfirm').textContent = 'Confirm these details';
     showOnly('screen-review');
   } else if (state.stage === 'confirmed') {
     el('confirmedBody').innerHTML = reviewRows(state.review);
     const uncertain = state.evaluation && state.evaluation.state === 'uncertain';
-    el('confirmedEval').innerHTML = state.evaluation ? '<div class="warn">Last evaluation: ' + esc(state.evaluation.state) + (state.evaluation.failure_category ? ' (' + esc(state.evaluation.failure_category) + ')' : '') + '. No automatic retry was made. Edit any detail for a fresh revision, or use the button below to explicitly request one new budgeted attempt.</div>' : '';
-    el('requestBid').textContent = uncertain ? 'Request again — one new budgeted attempt' : 'Request opening bid';
+    el('confirmedEval').innerHTML = state.evaluation ? '<div class="warn">Last try did not finish' + (state.evaluation.failure_category ? ' (' + esc(state.evaluation.failure_category) + ')' : '') + '. Nothing was retried automatically. Change a detail, or use the button below to try once more.</div>' : '';
+    el('requestBid').textContent = uncertain ? 'Try once more (one new try)' : 'Get my suggested price';
     showOnly('screen-confirmed');
   } else if (state.stage === 'evaluating') {
     showOnly('screen-evaluating');
     poll(2500);
   } else if (state.stage === 'decided') {
-    el('decisionBody').innerHTML = '<div class="notice">' + esc(state.result.notice || 'DRAFT — NOT SENT.') + '</div>' + resultCard(state.evaluation_kind, state.result)
-      + (state.guidance ? '<h2>Negotiation guidance</h2><pre class="guidance">' + esc(state.guidance) + '</pre>' : '');
+    let body = resultCard(state.evaluation_kind, state.result);
+    const draft = brokerDraft(state.guidance);
+    if (draft) body += '<h2>Draft message to the broker</h2><div class="warn">NOT SENT — send it yourself only if you choose to.</div><pre class="guidance">' + esc(draft) + '</pre>';
+    const detail = howWorkedOut(state.guidance);
+    body += '<details><summary>How this was worked out</summary>'
+      + (detail ? '<pre class="guidance">' + esc(detail) + '</pre>' : '')
+      + '<div class="notice">Preliminary estimate only. It uses your reviewed miles and rates; stops, traffic and market conditions are not included. Nothing is booked or sent.</div></details>';
+    el('decisionBody').innerHTML = body;
     showOnly('screen-decided');
   }
 }
