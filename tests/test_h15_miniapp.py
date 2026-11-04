@@ -336,8 +336,10 @@ def test_stepper_short_label_only_in_progress_indicator(store, client):
     assert steps.count('<li') == 5
     for label in ('PROFILE', 'SRNSHOT', 'REVIEW', 'EVAL', 'DECISION'):
         assert label in steps
-    assert 'aria-label="2 · Screenshot"' in steps
-    assert 'aria-hidden="true">2 · SRNSHOT<' in steps
+    for prefix in ('1 ·', '2 ·', '3 ·', '4 ·', '5 ·'):
+        assert prefix not in steps
+    assert 'aria-label="Screenshot"' in steps
+    assert 'aria-hidden="true">SRNSHOT<' in steps
     assert 'white-space:nowrap' in page
     assert '@media(max-width:380px)' in page
     assert 'STEP 2 · SCREENSHOT' in page
@@ -943,7 +945,12 @@ def test_miniapp_presentation_uses_familiar_wording():
     assert 'Lowest total you will accept' in html
     assert 'Suggested asking price:' in script
     assert 'Draft message to the broker' in script
-    assert 'Above operating cost' in script
+    assert 'above operating cost' in script.lower()
+    assert 'Posted offer above operating cost' in script
+    assert 'Offer above operating cost' in script
+    assert 'Suggested price above operating cost' in script
+    assert "r.compensation_source === 'owner counteroffer'" in script
+    assert "kind === 'opening_bid'" in script
     assert 'Target all-mile RPM' not in html + script
     assert 'Deadhead' not in html + script
     # Logo, wordmark and the draft/not-sent notice stay visible.
@@ -973,3 +980,50 @@ def test_import_polling_spends_nothing(store, client):
         assert api(client, 'state', data).status_code == 200
     assert attempts_used(store) == before
     assert api(client, 'state', data).json()['state']['stage'] == 'photo'
+
+
+def test_save_failure_blocks_chain_and_valid_save_uses_new_revision(store, client):
+    from pathlib import Path
+    script = Path('src/axle_hackathon/miniapp_app.js').read_text()
+    handler = script[script.index("el('reviewConfirm')"):]
+    assert 'function reviewEdits()' in script
+    assert handler.index("'/miniapp/api/correct'") < handler.index("'/miniapp/api/confirm'") \
+        < handler.index("'/miniapp/api/evaluate'")
+    consent(store)
+    data = reviewed(client, store)
+    # Invalid save: no revision change, no confirmation, no queue, no spend.
+    bad = api(client, 'correct', data, request_id=rid(), expected_revision=2,
+              fields={'availability': 'someday'})
+    assert bad.status_code == 400
+    assert store._opening.get(1, 1).revision == 2
+    assert not store._opening.get(1, 1).confirmed
+    assert evaluation_rows(store) == [] and attempts_used(store) == 1
+    # Valid displayed edit: new revision; stale confirm rejected; the exact
+    # new revision confirms and evaluates once.
+    saved = api(client, 'correct', data, request_id=rid(), expected_revision=2,
+                fields={'loaded_miles': '200'})
+    assert saved.json()['state']['review']['revision'] == 3
+    assert api(client, 'confirm', data, request_id=rid(), revision=2).status_code == 409
+    assert api(client, 'confirm', data, request_id=rid(), revision=3).status_code == 200
+    assert api(client, 'evaluate', data, request_id=rid(), revision=3).status_code == 200
+    assert len(evaluation_rows(store)) == 1
+    tick_opening(store)
+    assert attempts_used(store) == 2
+
+
+def test_result_labels_match_calculation_source(store, client):
+    # Server results carry the actual surplus source; the shipped script
+    # maps it to the matching label and never calls the amount profit.
+    consent(store)
+    data = confirmed_review(client, store)
+    assert api(client, 'evaluate', data, request_id=rid(), revision=2).status_code == 200
+    tick_opening(store)
+    decided = api(client, 'state', data).json()['state']
+    assert decided['evaluation_kind'] == 'offer_evaluation'
+    assert decided['result']['compensation_source'] == 'posted offer'
+    assert decided['result']['estimated_operating_surplus'] == '120.00'
+    from pathlib import Path
+    script = Path('src/axle_hackathon/miniapp_app.js').read_text()
+    assert "if (kind === 'opening_bid') return 'Suggested price above operating cost';" in script
+    assert "if (r.compensation_source === 'owner counteroffer') return 'Offer above operating cost';" in script
+    assert "return 'Posted offer above operating cost';" in script

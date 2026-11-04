@@ -75,6 +75,13 @@ function prefillReviewForm(r) {
   el('moreDetails').open = missingRequired(r);
 }
 function money(v) { return v === null || v === undefined ? 'unknown' : '$' + v; }
+function aboveCostLabel(kind, r) {
+  // The amount is compensation (or the suggested price) minus operating
+  // cost; the label names the actual amount it was calculated from.
+  if (kind === 'opening_bid') return 'Suggested price above operating cost';
+  if (r.compensation_source === 'owner counteroffer') return 'Offer above operating cost';
+  return 'Posted offer above operating cost';
+}
 function resultCard(kind, r) {
   let h = '';
   if (kind === 'opening_bid') {
@@ -86,7 +93,7 @@ function resultCard(kind, r) {
         + ' above operating cost.</p>'
         + '<div class="metrics"><div class="metric"><span class="value">' + esc(r.total_miles || '?') + '</span><small>TOTAL MILES</small></div>'
         + '<div class="metric"><span class="value">' + money(r.estimated_operating_cost) + '</span><small>EST. OPERATING COST</small></div>'
-        + '<div class="metric"><span class="value">' + money(r.estimated_operating_surplus) + '</span><small>ABOVE OPERATING COST</small></div></div>';
+        + '<div class="metric"><span class="value">' + money(r.estimated_operating_surplus) + '</span><small>' + esc(aboveCostLabel(kind, r).toUpperCase()) + '</small></div></div>';
     } else {
       el('decisionStatus').textContent = 'DRAFT — NOT SENT';
       el('decisionTitle').textContent = 'We cannot suggest a price yet';
@@ -101,7 +108,7 @@ function resultCard(kind, r) {
       + ' across ' + esc(r.total_miles || '?') + ' miles, and clears your lowest total.</p>'
       + fieldRow('Offer $', { value: r.compensation, state: 'known' })
       + fieldRow('Est. operating cost $', { value: r.estimated_operating_cost, state: 'known' })
-      + fieldRow('Above operating cost $', { value: r.estimated_operating_surplus, state: 'known' });
+      + fieldRow(aboveCostLabel(kind, r) + ' $', { value: r.estimated_operating_surplus, state: 'known' });
   } else if (r.decision === 'NEGOTIATE') {
     el('decisionStatus').textContent = 'DRAFT — NOT SENT · PRELIMINARY ESTIMATE';
     let ask = null;
@@ -120,7 +127,7 @@ function resultCard(kind, r) {
     }
     h += fieldRow('Est. operating cost $', { value: r.estimated_operating_cost, state: 'known' });
     if (r.estimated_operating_surplus !== null && r.estimated_operating_surplus !== undefined)
-      h += fieldRow('Above operating cost $', { value: r.estimated_operating_surplus, state: r.estimated_operating_surplus === null ? 'unknown' : 'known' });
+      h += fieldRow(aboveCostLabel(kind, r) + ' $', { value: r.estimated_operating_surplus, state: r.estimated_operating_surplus === null ? 'unknown' : 'known' });
   } else if (r.decision === 'DECLINE') {
     el('decisionStatus').textContent = 'DRAFT — NOT SENT';
     el('decisionTitle').textContent = 'This trip does not work';
@@ -229,12 +236,39 @@ el('correctForm').addEventListener('submit', e => {
   if (!Object.keys(fields).length) { showError('Enter at least one value.'); return; }
   mutate('/miniapp/api/correct', { request_id: rid(), expected_revision: current.review.revision, fields }).then(ok => { if (ok) e.target.reset(); });
 });
-el('reviewConfirm').addEventListener('click', async () => {
-  if (busy || !current || !current.review) return;
-  if (!current.review.confirmed) {
-    const ok = await mutate('/miniapp/api/confirm', { request_id: rid(), revision: current.review.revision });
-    if (!ok || !current || !current.review || !current.review.confirmed) return;
+function reviewEdits() {
+  // Displayed prefilled values that differ from the current snapshot.
+  // Cleared fields mean "unknown", matching the bot correction wording.
+  const r = current.review, form = el('correctForm'), fields = {};
+  const shown = f => (f && f.value !== null && f.value !== undefined) ? String(f.value) : '';
+  const pairs = [['loaded_miles', r.facts.loaded_miles], ['deadhead_miles', r.facts.deadhead_miles],
+    ['reposition_miles', r.pricing.reposition_miles], ['payout', r.facts.payout],
+    ['counter', r.counter_offer], ['duration_note', r.trip.duration_note],
+    ['availability', r.trip.availability], ['handling_note', r.trip.handling_note]];
+  for (const [name, field] of pairs) {
+    const input = form.elements[name];
+    if (!input) continue;
+    const value = String(input.value || '').trim();
+    if (value !== shown(field)) fields[name] = value === '' ? 'unknown' : value;
   }
+  return fields;
+}
+let confirming = false;
+el('reviewConfirm').addEventListener('click', async () => {
+  if (busy || confirming || !current || !current.review) return;
+  confirming = true;
+  try {
+    if (!current.review.confirmed) {
+      const edits = reviewEdits();
+      if (Object.keys(edits).length) {
+        const saved = await mutate('/miniapp/api/correct',
+          { request_id: rid(), expected_revision: current.review.revision, fields: edits });
+        if (!saved || !current || !current.review) return;
+      }
+      const ok = await mutate('/miniapp/api/confirm', { request_id: rid(), revision: current.review.revision });
+      if (!ok || !current || !current.review || !current.review.confirmed) return;
+    }
+  } finally { confirming = false; }
   const body = { request_id: rid(), revision: current.review.revision };
   if (current.evaluation && current.evaluation.state === 'uncertain') body.retry_uncertain = true;
   mutate('/miniapp/api/evaluate', body);
