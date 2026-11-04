@@ -11,7 +11,7 @@ function setBusy(value) { busy = value; document.querySelectorAll('button,input,
 function showOnly(id) { for (const s of document.querySelectorAll('main > section')) s.hidden = s.id !== id; }
 function stepsTo(stage) {
   const order = ['profile', 'photo', 'review', 'confirmed', 'decided'];
-  const rank = { profile: 0, photo: 1, review: 2, confirmed: 3, evaluating: 3, decided: 4 };
+  const rank = { profile: 0, photo: 1, review: 2, confirmed: 2, evaluating: 3, decided: 4 };
   const at = rank[stage] === undefined ? 0 : rank[stage];
   document.querySelectorAll('#steps li').forEach((li, i) => {
     const current = i === at && stage !== 'decided';
@@ -45,22 +45,34 @@ function profileRows(p) {
   if (!p) return '<p>No profile yet.</p>';
   return fieldRow('Your cost per mile', p.operating_cpm) + fieldRow('Cost basis', p.expense_claim)
     + fieldRow('Your asking rate per mile', p.target_all_mile_rpm) + fieldRow('Lowest total you will accept', p.minimum_job_charge)
-    + fieldRow('Truck', p.equipment) + fieldRow('About your work', p.operating_context);
+    + fieldRow('Equipment', p.equipment) + fieldRow('About your work', p.operating_context);
 }
 function reviewRows(r) {
-  let h = '<h2>From the screenshot</h2>' + fieldRow('Posted pay $', r.facts.payout) + fieldRow('Loaded miles', r.facts.loaded_miles)
-    + fieldRow('Miles to pickup', r.facts.deadhead_miles) + fieldRow('Weight lbs', r.facts.weight_lbs);
-  h += '<h2>Your rates</h2>' + fieldRow('Your asking rate per mile', r.pricing.target_all_mile_rpm) + fieldRow('Your cost per mile', r.pricing.operating_cpm)
+  let h = '<h2>YOUR RATES</h2>' + fieldRow('Your asking rate per mile', r.pricing.target_all_mile_rpm) + fieldRow('Your cost per mile', r.pricing.operating_cpm)
     + fieldRow('Cost basis', r.pricing.expense_claim) + fieldRow('Lowest total you will accept', r.pricing.minimum_job_charge);
-  h += '<h2>This trip</h2>' + fieldRow('Miles after delivery', r.pricing.reposition_miles)
-    + fieldRow('How long it takes', r.trip.duration_note) + fieldRow('Timing works?', r.trip.availability) + fieldRow('Loading or handling needs', r.trip.handling_note);
-  h += '<h2>Pay for this check</h2>' + fieldRow('Broker offer $', r.counter_offer) + fieldRow('Pay being checked $', r.evaluated_compensation);
-  if (r.counter_note && r.counter_note.value) h += fieldRow('Counter note', r.counter_note);
-  if (r.issues && r.issues.length) h += '<div class="notice">Unresolved notes:<br>• ' + r.issues.map(esc).join('<br>• ') + '</div>';
+  h += '<h2>FROM THE SCREENSHOT</h2>' + fieldRow('Posted pay $', r.facts.payout) + fieldRow('Loaded miles', r.facts.loaded_miles)
+    + fieldRow('Miles to pickup', r.facts.deadhead_miles) + fieldRow('Weight lbs', r.facts.weight_lbs);
+  if (r.counter_note && r.counter_note.value) h += fieldRow('Offer note', r.counter_note);
+  if (r.issues && r.issues.length) h += '<div class="notice">Notes to check:<br>• ' + r.issues.map(esc).join('<br>• ') + '</div>';
   if (r.mileage_candidates && r.mileage_candidates.length) {
     for (const c of r.mileage_candidates) h += '<div class="notice">Estimated miles from the screenshot note: ' + esc(c.value) + ' mi — not confirmed yet. <button type="button" class="secondary adopt-btn" data-value="' + esc(c.value) + '">Use ' + esc(c.value) + ' mi</button> Using it saves as your value; you will confirm again.</div>';
-  } else if (r.mileage_proposals && r.mileage_proposals.length) h += '<div class="notice">Possible pickup-to-delivery interpretation (UNCONFIRMED, from note): ' + r.mileage_proposals.map(esc).join(', ') + ' — confirm explicitly or correct.</div>';
+  } else if (r.mileage_proposals && r.mileage_proposals.length) h += '<div class="notice">Estimated miles (not confirmed): ' + r.mileage_proposals.map(esc).join(', ') + ' — confirm explicitly or correct.</div>';
   return h;
+}
+function missingRequired(r) {
+  const values = [r.facts.loaded_miles, r.facts.deadhead_miles, r.pricing.reposition_miles,
+                  r.pricing.operating_cpm, r.pricing.target_all_mile_rpm, r.pricing.minimum_job_charge];
+  return values.some(f => !f || f.value === null || f.value === undefined);
+}
+function prefillReviewForm(r) {
+  const form = el('correctForm');
+  const set = (name, field) => { if (form.elements[name]) form.elements[name].value = field && field.value !== null && field.value !== undefined ? field.value : ''; };
+  set('loaded_miles', r.facts.loaded_miles); set('deadhead_miles', r.facts.deadhead_miles);
+  set('reposition_miles', r.pricing.reposition_miles); set('payout', r.facts.payout);
+  set('counter', r.counter_offer); set('duration_note', r.trip.duration_note);
+  set('handling_note', r.trip.handling_note);
+  if (form.elements['availability']) form.elements['availability'].value = r.trip.availability && r.trip.availability.value ? r.trip.availability.value : '';
+  el('moreDetails').open = missingRequired(r);
 }
 function money(v) { return v === null || v === undefined ? 'unknown' : '$' + v; }
 function resultCard(kind, r) {
@@ -144,20 +156,23 @@ function render(state) {
     if (state.staged_profile) { el('profileReview').innerHTML = profileRows(state.staged_profile); showOnly('screen-profile-review'); }
     else showOnly('screen-profile');
   } else if (state.stage === 'photo') {
-    el('photoProfile').innerHTML = profileRows(state.profile);
     showOnly('screen-photo');
     poll(4000);
-  } else if (state.stage === 'review') {
-    el('reviewStatus').textContent = 'STEP 3 · CHECK DETAILS';
+  } else if (state.stage === 'review' || state.stage === 'confirmed') {
+    el('reviewStatus').textContent = state.stage === 'confirmed' ? 'STEP 3 · REVIEW · CONFIRMED' : 'STEP 3 · REVIEW';
     el('reviewBody').innerHTML = reviewRows(state.review);
-    el('reviewConfirm').textContent = 'Confirm these details';
-    showOnly('screen-review');
-  } else if (state.stage === 'confirmed') {
-    el('confirmedBody').innerHTML = reviewRows(state.review);
+    prefillReviewForm(state.review);
     const uncertain = state.evaluation && state.evaluation.state === 'uncertain';
-    el('confirmedEval').innerHTML = state.evaluation ? '<div class="warn">Last try did not finish' + (state.evaluation.failure_category ? ' (' + esc(state.evaluation.failure_category) + ')' : '') + '. Nothing was retried automatically. Change a detail, or use the button below to try once more.</div>' : '';
-    el('requestBid').textContent = uncertain ? 'Try once more (one new try)' : 'Get my suggested price';
-    showOnly('screen-confirmed');
+    if (state.stage === 'confirmed') {
+      el('confirmedEval').innerHTML = '<div class="notice">Details confirmed. You can evaluate now, or change a detail first.</div>'
+        + (state.evaluation ? '<div class="warn">Last try did not finish' + (state.evaluation.failure_category ? ' (' + esc(state.evaluation.failure_category) + ')' : '') + '. Nothing was retried automatically. Change a detail, or try once more below.</div>' : '');
+      el('reviewConfirm').textContent = uncertain ? 'Try once more (one new try)' : 'EVALUATE';
+    } else {
+      el('confirmedEval').innerHTML = missingRequired(state.review)
+        ? '<div class="warn">Some needed details are still unknown. Add them under MORE TRIP DETAILS, save, then confirm.</div>' : '';
+      el('reviewConfirm').textContent = 'CONFIRM & EVALUATE';
+    }
+    showOnly('screen-review');
   } else if (state.stage === 'evaluating') {
     showOnly('screen-evaluating');
     poll(2500);
@@ -214,9 +229,12 @@ el('correctForm').addEventListener('submit', e => {
   if (!Object.keys(fields).length) { showError('Enter at least one value.'); return; }
   mutate('/miniapp/api/correct', { request_id: rid(), expected_revision: current.review.revision, fields }).then(ok => { if (ok) e.target.reset(); });
 });
-el('reviewConfirm').addEventListener('click', () => { if (!busy && current && current.review) mutate('/miniapp/api/confirm', { request_id: rid(), revision: current.review.revision }); });
-el('requestBid').addEventListener('click', () => {
+el('reviewConfirm').addEventListener('click', async () => {
   if (busy || !current || !current.review) return;
+  if (!current.review.confirmed) {
+    const ok = await mutate('/miniapp/api/confirm', { request_id: rid(), revision: current.review.revision });
+    if (!ok || !current || !current.review || !current.review.confirmed) return;
+  }
   const body = { request_id: rid(), revision: current.review.revision };
   if (current.evaluation && current.evaluation.state === 'uncertain') body.retry_uncertain = true;
   mutate('/miniapp/api/evaluate', body);
@@ -226,15 +244,10 @@ document.addEventListener('click', e => {
   if (!btn || busy || !current || !current.review) return;
   mutate('/miniapp/api/correct', { request_id: rid(), expected_revision: current.review.revision, fields: { loaded_miles: btn.dataset.value } });
 });
-el('confirmCorrectForm').addEventListener('submit', e => {
-  e.preventDefault(); if (busy || !current || !current.review) return;
-  const fields = formFields(e.target);
-  if (!Object.keys(fields).length) { showError('Enter at least one value.'); return; }
-  mutate('/miniapp/api/correct', { request_id: rid(), expected_revision: current.review.revision, fields }).then(ok => { if (ok) e.target.reset(); });
-});
-el('counterForm').addEventListener('submit', e => {
-  e.preventDefault(); if (busy || !current || !current.review) return;
-  mutate('/miniapp/api/correct', { request_id: rid(), expected_revision: current.review.revision, fields: formFields(e.target) }).then(ok => { if (ok) e.target.reset(); });
+el('decidedEdit').addEventListener('click', () => {
+  if (busy || !current || !current.review) return;
+  render({ ...current, stage: 'review' });
+  el('moreDetails').open = true;
 });
 el('decidedRefresh').addEventListener('click', refresh);
 if (!initData) { showOnly('screen-consent'); el('consentText').textContent = 'No Telegram launch data found. Open this app from the bot button inside Telegram.'; }

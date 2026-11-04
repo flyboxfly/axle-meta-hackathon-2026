@@ -333,14 +333,17 @@ def test_stepper_short_label_only_in_progress_indicator(store, client):
     page = client.get('/miniapp/').text
     steps = re.search(r'<ol class="steps".*?</ol>', page, re.S).group(0)
     assert steps.count('<li') == 5
-    for label in ('Your rates', 'Screenshot', 'Check details', 'Confirm', 'Your price'):
+    assert steps.count('<li') == 5
+    for label in ('PROFILE', 'SRNSHOT', 'REVIEW', 'EVAL', 'DECISION'):
         assert label in steps
+    assert 'aria-label="2 · Screenshot"' in steps
+    assert 'aria-hidden="true">2 · SRNSHOT<' in steps
     assert 'white-space:nowrap' in page
     assert '@media(max-width:380px)' in page
     assert 'STEP 2 · SCREENSHOT' in page
     assert 'aria-label="Progress"' in page
     shipped_js = Path('src/axle_hackathon/miniapp_app.js').read_text()
-    assert 'From the screenshot' in shipped_js
+    assert 'FROM THE SCREENSHOT' in shipped_js
     assert 'Srnshot' not in shipped_js
 
 
@@ -931,6 +934,11 @@ def test_miniapp_presentation_uses_familiar_wording():
         assert 'net profit' not in text.lower()
     assert 'Your cost per mile' in html and 'Your asking rate per mile' in html
     assert 'Miles to pickup' in html and 'Miles after delivery' in html
+    assert 'IMPORT LOAD DETAILS' in html and 'CONFIRM &amp; EVALUATE' in html
+    assert 'CONFIRM PROFILE' in html and 'id="screen-confirmed"' not in html
+    assert 'counterBox' not in html
+    assert 'Check a broker offer' not in html
+    assert 'CHECK A BROKER OFFER' not in html
     assert 'both rates apply to all reviewed trip miles' in html.lower()
     assert 'Lowest total you will accept' in html
     assert 'Suggested asking price:' in script
@@ -941,3 +949,27 @@ def test_miniapp_presentation_uses_familiar_wording():
     # Logo, wordmark and the draft/not-sent notice stay visible.
     assert '/miniapp/logo.png' in html and 'axle<span>.</span>' in html
     assert 'DRAFT — NOT SENT' in html + script
+
+
+def test_confirmed_state_stays_on_review_screen_flow(store, client):
+    # Server stage mapping: confirmation does not create a separate screen
+    # stage; the client keeps confirmed state on the REVIEW screen (stage
+    # 'confirmed' is rendered by the review screen in miniapp_app.js).
+    consent(store)
+    data = confirmed_review(client, store)
+    state = api(client, 'state', data).json()['state']
+    assert state['stage'] == 'confirmed' and state['review']['confirmed'] is True
+    from pathlib import Path
+    script = Path('src/axle_hackathon/miniapp_app.js').read_text()
+    assert "state.stage === 'review' || state.stage === 'confirmed'" in script
+    assert "showOnly('screen-review')" in script
+
+
+def test_import_polling_spends_nothing(store, client):
+    consent(store)
+    data = profiled(client)
+    before = attempts_used(store)
+    for _ in range(3):
+        assert api(client, 'state', data).status_code == 200
+    assert attempts_used(store) == before
+    assert api(client, 'state', data).json()['state']['stage'] == 'photo'
