@@ -105,6 +105,10 @@ class PilotMemory:
                 saved_at TEXT NOT NULL, expires_at REAL NOT NULL,
                 disclosure_version TEXT NOT NULL, source_revision INTEGER NOT NULL,
                 source_confirmed_at TEXT NOT NULL, consented_at TEXT NOT NULL)''')
+            self._db.execute('''CREATE TABLE IF NOT EXISTS opening_profiles (
+                carrier TEXT PRIMARY KEY, version TEXT NOT NULL, profile TEXT NOT NULL,
+                saved_at TEXT NOT NULL, expires_at REAL NOT NULL,
+                disclosure_version TEXT NOT NULL, consented_at TEXT NOT NULL)''')
             self._db.commit()
             self._db.execute('CREATE TABLE IF NOT EXISTS pilot_deletions (carrier TEXT PRIMARY KEY)')
             self._db.commit()
@@ -290,6 +294,7 @@ class PilotMemory:
             self._db.execute('INSERT OR IGNORE INTO pilot_deletions VALUES (?)', (carrier,))
         with self._db:
             self._db.execute('DELETE FROM pilot_profiles WHERE carrier=?', (carrier,))
+            self._db.execute('DELETE FROM opening_profiles WHERE carrier=?', (carrier,))
             self._db.execute('DELETE FROM pilot_deletions WHERE carrier=?', (carrier,))
         self._pending_deletions.discard(carrier)
 
@@ -310,3 +315,4 @@ class PilotMemory:
                         self._conversation_states.pop(carrier, None)
             with self._db:
                 self._db.execute('DELETE FROM pilot_profiles WHERE expires_at<=?', (now.timestamp(),))
+                self._db.execute('DELETE FROM opening_profiles WHERE expires_at<=?', (now.timestamp(),))
