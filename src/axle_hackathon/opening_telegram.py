@@ -10,6 +10,7 @@ from contextlib import asynccontextmanager
 from fastapi import FastAPI, Request
 from fastapi.responses import JSONResponse
 
+from .opening_profile_store import OpeningProfileStore
 from .opening_intake import IntakeFacts, ScreenshotDraft, parse_media_update
 from .opening_workflow import (OpeningPricing, OpeningProfile, OpeningTrip,
                                display_expense_claim, render_review)
@@ -24,7 +25,10 @@ QUESTIONS = ('Useful next details: cargo commodity and weight confirmation, hand
 PROFILE_PROMPT = ('Send your carrier profile in one message (one item per line, or separated '
     'by semicolons). Labels: cpm ($/mile, all operating expenses), target ($/mile revenue), '
     'minimum (job charge, or none), equipment, context. Example:\n'
-    'cpm 1.25\ntarget 2.50\nminimum 100\nequipment 26ft box truck\ncontext solo, no hazmat')
+    'cpm 1.25\ntarget 2.50\nminimum 100\nequipment 26ft box truck\ncontext solo, no hazmat\n'
+    'Also supply DOT, MC if applicable, unit (or nickname), capabilities, arrangement '
+    '(owned, financed, rented), and optional home base. Numbers are carrier-supplied, '
+    'not proof of authorization. Unknown items may be skipped.')
 TRIP_PROMPT = ('What total payout would make this load worth taking? Reply "payout goal 480" '
     'for a gross load payout goal, or keep your profile per-mile target. '
     'Send trip details in one message, or "skip". Labels: deadhead (miles to pickup), '
@@ -85,9 +89,17 @@ FIELD_LABELS = {
     'equipment': ('equipment', 'truck', 'vehicle'),
     'operating_context': ('context', 'operating context', 'about'),
     'counter': ('counter', 'counteroffer', 'counter offer'),
+    'usdot': ('dot', 'usdot', 'usdot number'),
+    'mc': ('mc', 'mc number'),
+    'unit_number': ('unit', 'unit number'),
+    'truck_nickname': ('nickname', 'truck nickname'),
+    'capabilities': ('capabilities',),
+    'arrangement': ('arrangement',),
+    'home_base': ('home base', 'yard'),
 }
 PROFILE_FIELDS = ('operating_cpm', 'target_all_mile_rpm', 'minimum_job_charge',
-                  'equipment', 'operating_context')
+                  'equipment', 'operating_context', 'usdot', 'mc', 'unit_number',
+                  'truck_nickname', 'capabilities', 'arrangement', 'home_base')
 
 
 def _label_map(fields):
@@ -142,6 +154,7 @@ class OpeningConversation:
     def __init__(self, inbox):
         self.inbox = inbox
         self._flows = inbox._conversation_states
+        self.profiles = OpeningProfileStore(inbox)
 
     @property
     def opening(self):
@@ -170,6 +183,12 @@ class OpeningConversation:
                 raise ValueError('Start a fresh intake with /start')
             if text == '/refresh':
                 return self._refresh(carrier, flow)
+            if text == '/profile':
+                self.inbox._access(user, chat, flow['token'])
+                if flow['step'] == 'profile_review':
+                    return self._prompt(carrier, self._render_profile(flow['profile_values']))
+                return self._prompt(carrier, self._render_profile(
+                    self.opening.get_profile(user, chat), review_actions=False))
             parts = text.split(' ', 2)
             if len(parts) < 2 or parts[1] != flow['nonce']:
                 # Plain messages carry no nonce; commands without one are stale.
@@ -184,6 +203,10 @@ class OpeningConversation:
                     raise
             command = parts[0]
             value = parts[2] if len(parts) == 3 else ''
+            if command == '/save_profile' and not value:
+                if flow['step'] != 'profile_review':
+                    raise ValueError('Review a truck profile before saving')
+                return self._confirm_profile(user, chat, carrier, flow, save=True)
             if command == '/confirm' and not value:
                 if flow['step'] == 'profile_review':
                     return self._confirm_profile(user, chat, carrier, flow)
@@ -207,11 +230,25 @@ class OpeningConversation:
                 access = self.inbox.consent(user, chat, flow['notice'].token, choices[value])
                 flow['token'] = access.token
                 self._flows[carrier] = flow
+                saved = self.profiles.load(user, chat, access.token) if value == 'remember' else None
+                flow['saved_profile_version'] = saved.version if saved else None
+                if saved is not None:
+                    flow['profile_values'] = saved.profile
+                    flow['profile_version_at_review'] = self.opening.profile_version(user, chat)
+                    return self._advance(carrier, 'profile_review',
+                        'Saved truck profile loaded as a draft; check costs and equipment again.\n'
+                        + self._render_profile(saved.profile))
                 return self._advance(carrier, 'profile', 'Consent recorded. ' + PROFILE_PROMPT)
             raise ValueError('Unexpected conversation step')
 
     def _plain(self, user, chat, carrier, flow, text):
         step = flow['step']
+        if step == 'profile_review' and text.strip().lower() == 'save profile':
+            return self._confirm_profile(user, chat, carrier, flow, save=True)
+        if step == 'profile_review' and text.strip().lower() == 'edit profile':
+            self.inbox._access(user, chat, flow['token'])
+            flow['nonce'] = token_urlsafe(12)
+            return self._prompt(carrier, 'Send the fields you want to change. ' + PROFILE_PROMPT)
         if step in ('profile', 'profile_review'):
             return self._profile_message(user, chat, carrier, flow, text)
         if step == 'photo':
@@ -247,19 +284,34 @@ class OpeningConversation:
         except PermissionError:
             self._flows.pop(carrier, None)
             raise
-        profile = validate_profile_pairs(parse_fields(text, PROFILE_FIELDS))
+        pairs = parse_fields(text, PROFILE_FIELDS)
+        previous = flow.get('profile_values')
+        if previous is not None:
+            pairs = {**{name: str(getattr(previous, name))
+                        for name in PROFILE_FIELDS if getattr(previous, name) is not None}, **pairs}
+        profile = validate_profile_pairs(pairs)
         flow['profile_values'] = profile
+        flow['profile_version_at_review'] = self.opening.profile_version(user, chat)
         flow['step'] = 'profile_review'
         flow['nonce'] = token_urlsafe(12)
         return self._prompt(carrier, self._render_profile(profile))
 
-    def _confirm_profile(self, user, chat, carrier, flow):
+    def _confirm_profile(self, user, chat, carrier, flow, *, save=False):
         profile = flow.get('profile_values')
         if profile is None:
             raise ValueError('Send the profile message first')
-        self.opening.set_profile(user, chat, profile)
-        return self._advance(carrier, 'photo',
-            'Profile confirmed and reused for this session. ' + PHOTO_PROMPT)
+        self.inbox._access(user, chat, flow['token'])
+        if flow.get('profile_version_at_review') != self.opening.profile_version(user, chat):
+            raise ValueError('Profile changed; review it again')
+        if save:
+            saved = self.profiles.save_reviewed(user, chat, flow['token'], flow['nonce'],
+                expected_version=flow.get('saved_profile_version'))
+            flow['saved_profile_version'] = saved.version
+        self.opening.set_profile_expected(user, chat, profile,
+            expected_version=flow['profile_version_at_review'])
+        notice = ('Truck profile saved and confirmed. ' if save else
+                  'Profile confirmed and reused for this session. ')
+        return self._advance(carrier, 'photo', notice + PHOTO_PROMPT)
 
     def _refresh(self, carrier, flow):
         if flow['step'] == 'memory':
@@ -312,7 +364,7 @@ class OpeningConversation:
         return done(f'Confirmed opening revision {snapshot.revision}. '
             'Use /price for a preliminary opening price or offer evaluation, or correct a field.')
 
-    def _render_profile(self, profile):
+    def _render_profile(self, profile, *, review_actions=True):
         def shown(value):
             return str(value) if value is not None else 'unknown'
         return ('SESSION PROFILE — review before screenshot upload:\n'
@@ -322,7 +374,16 @@ class OpeningConversation:
             f'minimum job charge: {shown(profile.minimum_job_charge)}\n'
             f'equipment: {shown(profile.equipment)}\n'
             f'operating context: {shown(profile.operating_context)}\n'
-            'Use /confirm to confirm this profile, or re-send the profile message.')
+            f'Carrier USDOT: {shown(profile.usdot)}; MC: {shown(profile.mc)} [carrier supplied; unverified]\n'
+            f'Truck unit: {shown(profile.unit_number)}; nickname: {shown(profile.truck_nickname)}\n'
+            f'Capabilities: {shown(profile.capabilities)}\n'
+            f'Arrangement: {shown(profile.arrangement)}\n'
+            f'Home base: {shown(profile.home_base)} [not a confirmed next destination]\n'
+            + ('Use /confirm for this session, or Save profile by replying "save profile" '
+               '(requires remember consent). Reply "edit profile" or send changed fields. '
+               'This slice saves one truck per authorized carrier.' if review_actions else
+               'To update your saved truck, use /start, choose remember, and edit its draft. '
+               'Starting again clears the current load session.'))
 
     def _correct(self, user, chat, carrier, flow, text):
         if flow['step'] not in ('review', 'confirmed'):
@@ -398,6 +459,14 @@ def validate_profile_pairs(pairs):
                 values[name] = _decimal(_number(parsed, name=name), name=name,
                                         low=Decimal(0), high=Decimal(1000), allow_zero=False)
         else:
+            if parsed is not None and name in ('usdot', 'mc'):
+                cleaned_id = re.sub(r'^(?:USDOT|DOT|MC)[ #:-]*', '', parsed.strip(), flags=re.IGNORECASE)
+                if cleaned_id.lower() in ('none', 'n/a') and name == 'mc':
+                    parsed = None
+                elif not re.fullmatch(r'[0-9]{1,8}', cleaned_id) or int(cleaned_id) == 0:
+                    raise ValueError(f'Invalid {name}')
+                else:
+                    parsed = cleaned_id
             if parsed is not None:
                 cleaned = parsed.strip()[:500 if name == 'operating_context' else 200]
                 if not cleaned:
@@ -412,6 +481,9 @@ def apply_pairs_to_snapshot(opening, user, chat, snapshot, pairs):
     """Shared correction/trip/counteroffer application. Creates one new revision."""
     if 'target_total_payout' in pairs and 'target_all_mile_rpm' in pairs:
         raise ValueError('Choose a total payout goal or a per-mile target, not both')
+    if set(pairs) & {'usdot', 'mc', 'unit_number', 'truck_nickname',
+                     'capabilities', 'arrangement', 'home_base'}:
+        raise ValueError('Carrier/truck identity changes require a fresh profile setup with /start')
     for name, raw in pairs.items():
         if name not in FIELD_LABELS:
             raise ValueError(f'Unexpected field {name!r}'[:80])
@@ -781,7 +853,7 @@ def create_opening_app(inbox, *, webhook_secret: str, allowed_host: str, convers
                         return reply(400, 'invalid_update')
                 return reply(200, 'queued' if accepted else 'duplicate')
             if conversation is not None and (isinstance(text, str) and (
-                    text.split(' ', 1)[0] in ('/start', '/reply', '/confirm', '/edit', '/refresh')
+                    text.split(' ', 1)[0] in ('/start', '/reply', '/confirm', '/save_profile', '/edit', '/refresh', '/profile')
                     or not text.startswith('/'))):
                 if send is None or conversation.inbox is not inbox:
                     return reply(503, 'unavailable')
