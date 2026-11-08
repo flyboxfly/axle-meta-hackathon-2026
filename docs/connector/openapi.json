@@ -76,6 +76,96 @@
         }
       }
     },
+    "/api/v1/axle/verify": {
+      "get": {
+        "operationId": "verify_service_credential",
+        "summary": "Verify synthetic service access without evaluating freight",
+        "description": "Read; host allowlist, no Origin, exact Bearer authorization. No request body, freight evaluation, persistence or evaluation quota usage. Connection success is not evaluation success or connector approval.",
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Credential accepted; Cache-Control: no-store",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "status": {
+                      "const": "ok"
+                    },
+                    "synthetic_only": {
+                      "const": true
+                    }
+                  },
+                  "required": [
+                    "status",
+                    "synthetic_only"
+                  ]
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Unauthorized; WWW-Authenticate: Bearer",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "detail": {
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "detail"
+                  ]
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Host forbidden or Origin header present",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "detail": {
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "detail"
+                  ]
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "Internal error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "detail": {
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "detail"
+                  ]
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/api/v1/axle/evaluate": {
       "post": {
         "operationId": "evaluate_confirmed_freight_opportunity",

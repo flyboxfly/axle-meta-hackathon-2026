@@ -1,9 +1,10 @@
 """Isolated server-to-server evaluation boundary. Preparation only; no deployment.
 
-Exposes only GET /api/health and POST /api/v1/axle/evaluate. Docs disabled.
+Exposes GET /api/health, GET /api/v1/axle/verify and POST /api/v1/axle/evaluate.
+Docs disabled.
 
 Configuration (explicit, separate from local demo settings):
-  AXLE_API_TOKEN: nonempty bearer token for evaluation requests.
+  AXLE_API_TOKEN: nonempty bearer token for evaluation and verification requests.
   AXLE_API_ALLOWED_HOSTS: comma-separated exact ASCII DNS hostnames.
     Each name: total 1-253 chars, dot-separated labels of 1-63 letters/
     digits with interior hyphens only, lowercased. Single-label names
@@ -33,7 +34,9 @@ Errors: fixed status-to-message mapping with generic fallback. Arbitrary
   error responses, including 404/405/500.
 
 Scope: evaluation route only; health checks host allowlist but does not
-  consume rate or concurrency quota. No per-client tables; memory is bounded
+  consume rate or concurrency quota. Verification checks host/origin/auth only;
+  it does not read a body, evaluate freight or consume evaluation quota.
+  No per-client tables; memory is bounded
   by maxlen and a fixed semaphore. No proxy headers are read; limiter
   identity is global, not derived from client-supplied headers.
 
@@ -283,6 +286,18 @@ def _load_or_500() -> tuple[str, frozenset[str]]:
 async def health(request: Request):
     _, allowed = _load_or_500()
     _check_host(request, allowed)
+    return JSONResponse(
+        {"status": "ok", "synthetic_only": True},
+        headers={"Cache-Control": "no-store"},
+    )
+
+
+@app.get("/api/v1/axle/verify")
+async def verify(request: Request):
+    token, allowed = _load_or_500()
+    _check_host(request, allowed)
+    _check_origin_absent(request)
+    _check_auth(request, token)
     return JSONResponse(
         {"status": "ok", "synthetic_only": True},
         headers={"Cache-Control": "no-store"},

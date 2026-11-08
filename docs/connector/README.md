@@ -1,6 +1,28 @@
 # Axle synthetic freight evaluation — reviewer API documentation
 
-## Status update — October 31, 2026
+## Status update — November 8, 2026
+
+Owner-observed portal status: business verification Approved; submitted data
+processing questionnaire In review; Technical details Action needed. Technical
+specs is checked complete; remaining flow is Credentials → Test. No need to
+repeat the other sections. Overall Submitted does not establish testing or approval.
+
+Owner-observed Credentials fields select API key and Authorization header (Bearer).
+Proposed label: `Axle synthetic reviewer API`. The portal says it sends a harmless
+GET to the required test path. Authentication on that probe is our recommendation,
+not an explicit requirement in that help text. This branch adds
+`/api/v1/axle/verify`; it is not deployed by this documentation change.
+
+The source expects exactly `Authorization: Bearer <credential>`. Enter only the
+raw Axle service credential in the portal API key field when Bearer mode adds the
+prefix; never enter a Meta model key or Telegram token. The observed label alone
+does not prove prefix behavior: verify a valid-key pass and missing/wrong-key denial
+after approved deployment before declaring compatibility. Never expose keys in chat,
+screenshots, command output or git. Dedicated reviewer credential provisioning is
+still unverified and requires separate approval; do not reuse an owner/shared token.
+No portal field, credential, runtime or deployment was changed during implementation.
+
+## Historical status — October 31, 2026
 
 Owner handoff reports the initial application **Submitted**, business verification
 **Approved**, data processing questionnaire **In review**, and Technical details
@@ -19,7 +41,7 @@ they must not be repeated as prerequisites. The October 30 preparation below is
 historical and predates this submission. This update records the owner's handoff,
 not a new portal inspection or acceptance of questionnaire disclosures by Meta.
 
-## API documentation — H11 contract unchanged
+## API documentation — verification route added
 
 Operator: Fly Box Fly LLC. Support/privacy: contact@flyboxfly.com.
 Product: https://axle.flyboxfly.com · [Privacy](https://axle.flyboxfly.com/privacy)
@@ -38,9 +60,10 @@ Base: `https://axle-api-demo.flyboxfly.com`.
 | Method | Endpoint | Authorization | Outcome |
 |---|---|---|---|
 | GET | `/api/health` | None | `{"status":"ok","synthetic_only":true}` |
+| GET | `/api/v1/axle/verify` | Bearer | Fixed `{"status":"ok","synthetic_only":true}`; no evaluation |
 | POST | `/api/v1/axle/evaluate` | Bearer | Canonical evaluation and missing-fact questions |
 
-Only these two public routes exist. `/`, `/docs`, `/redoc`, `/openapi.json`,
+These three routes exist in this candidate; deployment remains separately approved. `/`, `/docs`, `/redoc`, `/openapi.json`,
 browser and model routes are disabled on this service. The static
 [OpenAPI 3.1 document](openapi.json) documents the contract; it does not enable
 a runtime route. Generate it with
@@ -67,13 +90,13 @@ Do not forward browser Basic authorization or an `Origin` header.
 
 The current demo accepts one service-wide token, not per-user identities,
 OAuth scopes, self-service accounts, plans or refresh tokens. It grants only
-synthetic evaluation. A health success does not verify evaluation authorization.
+synthetic evaluation and credential verification. A health success does not verify evaluation authorization.
 Missing/wrong credentials return 401. Revocation/rotation requires an owner
 runtime change and process restart; it has not been drilled. A dedicated
 reviewer credential has not been issued. Do not give reviewers the owner's
 existing token as a shortcut.
 
-Credential handoff is **blocked pending a verified secure portal/reviewer flow**.
+Credential handoff remains pending dedicated access and validation of the observed portal flow.
 Meta's [guidelines](https://platform.muse.ai/docs), sections 5 and 5.4–5.5,
 request integration/test credentials through secure instructions. The October 31 credential-entry screen establishes an entry UI but does not
 confirm storage protections, model exclusion or Authorization-header behavior.
@@ -193,7 +216,9 @@ this tool performs none.
 Limits: 32 KiB actual request body; 10-second body-read deadline; two concurrent
 evaluations and 30 authenticated attempts per 60 seconds globally per process.
 Invalid/oversized authenticated attempts consume rate quota. One deployed worker;
-state resets on restart. Health does not consume quota. No per-user fairness or
+state resets on restart. Health and verification do not consume evaluation quota. Verification rejects Origin
+and checks the same host/auth helpers as evaluation. It ignores request bodies and
+does not call the calculator, write files/database records or schedule jobs. No per-user fairness or
 distributed rate limiting is claimed. No Origin header is accepted on evaluation.
 The exact configured hostname is required. No regional entitlement system or
 subscription plan exists; access is restricted to authorized synthetic review.
