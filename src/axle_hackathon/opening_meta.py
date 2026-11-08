@@ -105,10 +105,13 @@ class OpeningDelegator:
                 raise ValueError('Invalid model extraction; no draft published') from None
             try:
                 previous = self._sessions.get(user, chat)
-                pricing, trip, counter = previous.pricing, previous.trip, (
+                # A total-dollar goal belongs to one opportunity, never the next screenshot.
+                pricing = previous.pricing.model_copy(update={'target_total_payout': None})
+                trip, counter = previous.trip, (
                     previous.counter_offer, previous.counter_note)
                 sources = {key: value for key, value in previous.sources.items()
-                           if key not in ('payout', 'loaded_miles', 'deadhead_miles', 'weight_lbs')}
+                           if key not in ('payout', 'loaded_miles', 'deadhead_miles', 'weight_lbs',
+                                          'target_total_payout')}
             except KeyError:
                 try:
                     template = self._sessions.get_profile(user, chat)
