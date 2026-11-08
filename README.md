@@ -1,3 +1,5 @@
+> **Post-hackathon development:** This is the `develop` branch. Continued work here is separate from the preserved competition-era references; see [development boundary](docs/POST_HACKATHON_DEVELOPMENT.md). The repository default branch remains `main`.
+
 > **H13 — offline carrier pilot modules; Telegram proposed:** See [H13 specification](docs/H13_TELEGRAM_PILOT.md), [planning core](docs/H13_CORE_REVIEW.md), [consent and profile memory](docs/H13_MEMORY_REVIEW.md) and [runtime role definitions](docs/agents/README.md). Separate Python modules support confirmed revision snapshots, cost normalization, profile metadata and consent-gated SQLite profile saves. Telegram, live processing disclosures and real-data specialist coordination remain unbuilt. Existing synthetic behavior remains unchanged.
 
 # Axle × Meta — local freight prototype
