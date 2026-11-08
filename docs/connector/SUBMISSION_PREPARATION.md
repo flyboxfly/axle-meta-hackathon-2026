@@ -1,6 +1,28 @@
 # Muse Technical specs — submission status and historical preparation
 
-## Status update — October 31, 2026
+## Status update — November 8, 2026
+
+Owner-observed portal status: business verification Approved; submitted data
+processing questionnaire In review; Technical details Action needed. Technical
+specs is checked complete; remaining flow is Credentials → Test. No need to
+repeat the other sections. Overall Submitted does not establish testing or approval.
+
+Owner-observed Credentials fields select API key and Authorization header (Bearer).
+Proposed label: `Axle synthetic reviewer API`. The portal says it sends a harmless
+GET to the required test path. Authentication on that probe is our recommendation,
+not an explicit requirement in that help text. This branch adds
+`/api/v1/axle/verify`; it is not deployed by this documentation change.
+
+The source expects exactly `Authorization: Bearer <credential>`. Enter only the
+raw Axle service credential in the portal API key field when Bearer mode adds the
+prefix; never enter a Meta model key or Telegram token. The observed label alone
+does not prove prefix behavior: verify a valid-key pass and missing/wrong-key denial
+after approved deployment before declaring compatibility. Never expose keys in chat,
+screenshots, command output or git. Dedicated reviewer credential provisioning is
+still unverified and requires separate approval; do not reuse an owner/shared token.
+No portal field, credential, runtime or deployment was changed during implementation.
+
+## Historical status — October 31, 2026
 
 Owner handoff reports the initial application **Submitted**, business verification
 **Approved**, data processing questionnaire **In review**, and Technical details

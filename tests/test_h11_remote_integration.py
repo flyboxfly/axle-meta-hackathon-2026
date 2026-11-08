@@ -154,7 +154,7 @@ def test_static_contract_tracks_models_and_only_remote_routes():
     generated = runpy.run_path(str(root / "scripts/export_reviewer_openapi.py"))["document"]()
     stored = json.loads((root / "docs/connector/openapi.json").read_text())
     assert generated == stored
-    assert set(stored["paths"]) == {"/api/health", "/api/v1/axle/evaluate"}
+    assert set(stored["paths"]) == {"/api/health", "/api/v1/axle/evaluate", "/api/v1/axle/verify"}
     operation = stored["paths"]["/api/v1/axle/evaluate"]["post"]
     example = operation["requestBody"]["content"]["application/json"]["example"]
     assert evaluate_for_client(synthetic_request()).model_dump(mode="json") == operation["responses"]["200"]["content"]["application/json"]["example"]

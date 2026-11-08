@@ -476,7 +476,7 @@ def test_excluded_routes(client):
         for r in remote_app.app.routes
         if hasattr(r, "path")
     )
-    assert routes == [("/api/health", ("GET",)), ("/api/v1/axle/evaluate", ("POST",))]
+    assert routes == [("/api/health", ("GET",)), ("/api/v1/axle/evaluate", ("POST",)), ("/api/v1/axle/verify", ("GET",))]
 
 
 def test_canonical_economics_sequence(client):
