@@ -29,6 +29,14 @@ class OpeningProfile(Frozen):
     minimum_job_charge: Decimal | None = None
     equipment: str | None = ModelField(default=None, max_length=200)
     operating_context: str | None = ModelField(default=None, max_length=500)
+    # Carrier assertions only. Authenticated tenant is still the adapter binding.
+    usdot: str | None = ModelField(default=None, pattern=r'^[0-9]{1,8}$')
+    mc: str | None = ModelField(default=None, pattern=r'^[0-9]{1,8}$')
+    unit_number: str | None = ModelField(default=None, max_length=80)
+    truck_nickname: str | None = ModelField(default=None, max_length=80)
+    capabilities: str | None = ModelField(default=None, max_length=200)
+    arrangement: Literal['owned', 'financed', 'rented'] | None = None
+    home_base: str | None = ModelField(default=None, max_length=200)
 
 
 class OpeningPricing(Frozen):
@@ -191,6 +199,7 @@ def render_review(snapshot: OpeningSnapshot, profile: OpeningProfile | None = No
         f'cost basis: {display_expense_claim(pricing.expense_claim)}',
         f'lowest total you will accept: {tagged("minimum_job_charge", pricing.minimum_job_charge)}',
         f'equipment: {shown(profile.equipment) if profile else "unknown"} [profile]',
+        f'truck: {shown(profile.unit_number or profile.truck_nickname) if profile else "unknown"} [profile]',
         f'operating context: {shown(profile.operating_context) if profile else "unknown"} [profile]',
         'This trip:',
         f'miles after delivery: {tagged("reposition_miles", pricing.reposition_miles)}',
