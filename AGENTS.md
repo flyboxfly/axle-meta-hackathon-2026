@@ -37,3 +37,12 @@ Prepare a concrete isolated deployment plan before requesting deployment approva
 Record development dates and whether evidence is offline, owner-operated live or independently observed.
 Runtime traces describe roles actually invoked, never private reasoning or fabricated delegation.
 Pre-existing concept, brand and alpha instructions must be disclosed separately from hackathon implementation.
+
+## Post-hackathon branch policy
+
+Continued product development targets `develop`, not `main` or the preserved H15 branch.
+Read docs/POST_HACKATHON_DEVELOPMENT.md before choosing a base or retargeting a PR.
+Do not change the default branch, move archive tags, backdate history, or modify the
+submitted demo/deployment as part of continued development. New work must not be
+represented as part of the hackathon submission. Merge and deployment authorization
+remain separate from implementation authorization.
