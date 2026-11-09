@@ -123,4 +123,6 @@ def test_new_screenshot_does_not_inherit_load_total_goal(store):
     snapshot = store._opening.get(1, 1)
     assert snapshot.pricing.target_total_payout is None
     assert 'target_total_payout' not in snapshot.sources
-    assert 'target_all_mile_rpm' in pricing_blockers(snapshot)
+    assert snapshot.pricing.target_all_mile_rpm == Decimal('2.50')
+    assert snapshot.sources['target_all_mile_rpm'] == 'profile'
+    assert 'reposition_miles' in pricing_blockers(snapshot)

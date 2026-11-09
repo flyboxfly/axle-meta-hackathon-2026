@@ -32,8 +32,10 @@ PROFILE_PROMPT = ('Send your carrier profile in one message (one item per line, 
 TRIP_PROMPT = ('What total payout would make this load worth taking? Reply "payout goal 480" '
     'for a gross load payout goal, or keep your profile per-mile target. '
     'Send trip details in one message, or "skip". Labels: deadhead (miles to pickup), '
-    'reposition (extra miles), duration, availability (feasible, blocked, or unknown), handling. Example:\n'
-    'deadhead 40\nreposition 20\nduration 6 hours\navailability feasible\nhandling liftgate required')
+    'next destination, reposition (miles from delivery to your next stop), duration, '
+    'availability (feasible, blocked, or unknown), handling. Example:\n'
+    'deadhead 40\nnext destination home\nreposition 20\nduration 6 hours\n'
+    'availability feasible\nhandling liftgate required')
 PHOTO_PROMPT = ('Send one PNG or JPEG screenshot of the opportunity. '
     'Processing before consent is never performed; /forget withdraws consent.')
 
@@ -82,6 +84,7 @@ FIELD_LABELS = {
     'operating_cpm': ('cpm', 'operating cpm', 'operating cost', 'all-in cpm', 'all in cpm'),
     'target_total_payout': ('total payout goal', 'payout goal', 'total goal'),
     'minimum_job_charge': ('minimum', 'minimum charge', 'min charge', 'min'),
+    'next_destination': ('next destination', 'destination'),
     'reposition_miles': ('reposition', 'reposition miles', 'reposition mi', 'repo'),
     'duration_note': ('duration', 'expected duration', 'job duration', 'time'),
     'availability': ('availability', 'schedule', 'schedule feasibility', 'feasible'),
@@ -524,8 +527,8 @@ def apply_pairs_to_snapshot(opening, user, chat, snapshot, pairs):
                 note = stripped[:200] or None
                 if note is None:
                     raise ValueError('Invalid counter')
-        elif name in ('duration_note', 'handling_note'):
-            limit = 200 if name == 'duration_note' else 500
+        elif name in ('next_destination', 'duration_note', 'handling_note'):
+            limit = 500 if name == 'handling_note' else 200
             trip[name] = None if parsed is None else parsed.strip()[:limit] or None
             if parsed is not None and trip[name] is None:
                 raise ValueError(f'Invalid {name}')
@@ -586,6 +589,9 @@ def apply_pairs_to_snapshot(opening, user, chat, snapshot, pairs):
         elif name == 'target_total_payout':
             sources.pop('target_all_mile_rpm', None)
         sources[name if name != 'counter' else 'counter_offer'] = 'carrier'
+    if trip['next_destination'] != snapshot.trip.next_destination and 'reposition_miles' not in pairs:
+        pricing['reposition_miles'] = None
+        sources.pop('reposition_miles', None)
     if offer is None:
         sources.pop('counter_offer', None)
     keywords = {word for name in pairs for word in _RETIRE_KEYWORDS.get(name, ())}
@@ -614,7 +620,7 @@ def step_trailer(step, nonce):
         return '\nSend one PNG or JPEG screenshot of the opportunity.'
     if step == 'trip':
         return ('\nSend trip details in one message, or "skip". '
-                'Labels: deadhead, reposition, duration, availability, handling.')
+                'Labels: deadhead, next destination, reposition, duration, availability, handling.')
     if step == 'review':
         return (f'\nStep: {nonce}\nReply format: /confirm STEP | '
                 '/edit STEP field value | correction as "field value"')
@@ -1045,23 +1051,15 @@ def run_screenshot(inbox, delegator, send, *, user: int, chat: int, update_id: i
                 profile = opening.get_profile(user, chat)
             except KeyError:
                 profile = None
-            previous = inbox._conversation_states.get(carrier)
-            trip_done = bool(previous and previous.get('trip_done'))
-            if trip_done:
-                step = 'review'
-                text = ('UNCONFIRMED screenshot draft — verify every value.\n'
-                        + render_review(snapshot, profile) + '\n' + QUESTIONS)
-            else:
-                step = 'trip'
-                text = ('UNCONFIRMED screenshot draft — verify every value.\n'
-                        + render_review(snapshot, profile) + '\n' + TRIP_PROMPT)
+            text = ('UNCONFIRMED screenshot draft — verify every value.\n'
+                    + render_review(snapshot, profile) + '\n' + TRIP_PROMPT)
             if len(text) > 4000:
                 raise ValueError('Reply too large')
             nonce = token_urlsafe(12)
             inbox._conversation_states[carrier] = dict(
-                step=step, nonce=nonce, revision=snapshot.revision, token=token,
-                values={}, trip_done=trip_done, last_prompt=text)
-            text += step_trailer(step, nonce)
+                step='trip', nonce=nonce, revision=snapshot.revision, token=token,
+                values={}, last_prompt=text)
+            text += step_trailer('trip', nonce)
         def guard():
             with inbox._lock:
                 inbox._access(user, chat, token)

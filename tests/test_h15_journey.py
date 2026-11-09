@@ -431,15 +431,16 @@ def test_equipment_correction_updates_profile_and_invalidates(store):
     assert store._opening.get_profile(1, 1).equipment == '53ft reefer'
 
 
-def test_session_reuse_across_screenshots(store):
-    conversation = journey(store, 'deadhead 40\navailability feasible')
+def test_profile_reuse_across_screenshots_resets_trip(store):
+    journey(store, 'deadhead 40\navailability feasible')
     token = store._active['owner'].token
     h15.submit_shot(store, token, update=55, message=55)
     assert h15.worker(store, []).tick() == 'completed'
     snapshot = store._opening.get(1, 1)
     assert snapshot.revision == 3 and not snapshot.confirmed
     assert str(snapshot.pricing.target_all_mile_rpm) == '2.50'
-    assert snapshot.trip.availability == 'feasible'
+    assert snapshot.trip.availability == 'unknown'
+    assert 'availability' not in snapshot.sources
     assert snapshot.sources['target_all_mile_rpm'] == 'profile'
 
 

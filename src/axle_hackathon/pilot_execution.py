@@ -13,8 +13,19 @@ def _seconds(value):
 # Sanitized failure categories only; exception text and payloads never persist.
 FAILURE_CATEGORIES = frozenset({
     'provider_error', 'provider_timeout', 'invalid_model_response',
+    'extraction_response_shape', 'extraction_incomplete', 'extraction_truncated',
+    'extraction_empty', 'extraction_json', 'extraction_schema', 'extraction_limits',
     'media_error', 'delivery_error', 'budget_exhausted',
     'consent_unavailable', 'stale_revision', 'missing_inputs', 'unknown'})
+
+
+
+class ExtractionResponseError(RuntimeError):
+    """An extraction failure with a fixed ledger category and no response data."""
+
+    def __init__(self, category, message):
+        super().__init__(message)
+        self.failure_category = category
 
 
 def failure_category_for(exc, *, stage=None):

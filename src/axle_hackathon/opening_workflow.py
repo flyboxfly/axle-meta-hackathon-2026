@@ -56,6 +56,7 @@ class OpeningPricing(Frozen):
 
 
 class OpeningTrip(Frozen):
+    next_destination: str | None = ModelField(default=None, max_length=200)
     duration_note: str | None = ModelField(default=None, max_length=200)
     availability: Literal['unknown', 'feasible', 'blocked'] = 'unknown'
     handling_note: str | None = ModelField(default=None, max_length=500)
@@ -202,6 +203,7 @@ def render_review(snapshot: OpeningSnapshot, profile: OpeningProfile | None = No
         f'truck: {shown(profile.unit_number or profile.truck_nickname) if profile else "unknown"} [profile]',
         f'operating context: {shown(profile.operating_context) if profile else "unknown"} [profile]',
         'This trip:',
+        f'next destination: {tagged("next_destination", trip.next_destination)}',
         f'miles after delivery: {tagged("reposition_miles", pricing.reposition_miles)}',
         f'expected duration: {tagged("duration_note", trip.duration_note)}',
         f'availability: {tagged("availability", trip.availability if trip.availability != "unknown" else None)}',
