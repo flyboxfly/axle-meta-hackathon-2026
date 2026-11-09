@@ -99,11 +99,7 @@ class OpeningDelegator:
                 raise
             except Exception:
                 raise RuntimeError('Model extraction failed; no automatic retry') from None
-            try:
-                draft = parse_extraction_response(response)
-            except ValueError:
-                raise ExtractionResponseError('extraction_schema',
-                                              'Screenshot response failed draft validation') from None
+            draft = parse_extraction_response(response)
             # A new opportunity starts with truck defaults and fresh trip facts.
             try:
                 profile = self._sessions.get_profile(user, chat)

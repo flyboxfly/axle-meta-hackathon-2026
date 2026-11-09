@@ -848,7 +848,13 @@ def test_truncated_live_shape_reproduces_uncertain_no_draft(store):
     (rest_extraction('private-fixture', status='incomplete', reason='max_output_tokens'),
      'extraction_truncated'),
     (rest_extraction(''), 'extraction_empty'),
-    (rest_extraction('private-fixture'), 'extraction_schema'),
+    (rest_extraction('private-fixture'), 'extraction_json'),
+    (rest_extraction(json.dumps(json.loads(draft_text()) | {'private-fixture': True})),
+     'extraction_schema'),
+    (rest_extraction(json.dumps(json.loads(draft_text()) | {'issues': ['private-fixture'] * 7})),
+     'extraction_limits'),
+    (rest_extraction(json.dumps(json.loads(draft_text()) | {'issues': ['private-fixture' * 20]})),
+     'extraction_limits'),
 ])
 def test_screenshot_failure_persists_only_fixed_category(store, body, category):
     access = session(store)
