@@ -149,11 +149,14 @@ def main_real():
     try:
         data,path=read_real_config(os.environ.get('AXLE_PILOT_CONFIG_FILE',''))
         host=build_opening_host(path,{(data['user_id'],data['chat_id']):'owner'},
-            MemoryPolicy(version='real-opening-v1',processing_notice=
-                'Real opening-price test. One owner screenshot is fetched and sent to Meta '
-                '(Muse Wonder) for extraction; figures are preliminary drafts, never sent '
-                'to brokers. Telegram and provider histories are separate; application '
-                'session expires after one hour. /forget withdraws consent.'),
+            MemoryPolicy(version='real-opening-v2',processing_notice=
+                'Real opening-price test. This two-load test asks for two owner screenshots. '
+                'Each screenshot you submit is fetched from Telegram and sent to Meta '
+                '(Muse Wonder) for extraction. /price sends confirmed pricing and trip '
+                'inputs to Meta for tool selection. The test allows four provider attempts. '
+                'Figures are preliminary drafts and are never sent to brokers. Telegram '
+                'and provider histories are separate. The session expires after one hour. '
+                '/forget withdraws consent.'),
             provider_key=data['provider_key'],bot_token=data['bot_token'],
             webhook_secret=data['webhook_secret'],allowed_host=data['allowed_host'],
             global_limit=4,carrier_limit=4)
