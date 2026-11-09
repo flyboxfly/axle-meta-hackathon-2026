@@ -321,3 +321,47 @@ def test_failed_profile_delete_keeps_privacy_intent_and_blocks_reuse(setup):
     _, answer = begin(inbox)
     assert 'BOX-01' not in answer
     assert load(inbox) is None
+
+
+def test_second_opportunity_reuses_truck_and_requires_fresh_trip(setup):
+    from test_h15_opening_workflow import submit_shot, worker
+
+    inbox, *_ = setup
+    chat = reviewed(inbox)
+    chat.handle(1, 1, 'save profile')
+    saved = load(inbox)
+    submit_shot(inbox, token(inbox))
+    assert worker(inbox, []).tick() == 'completed'
+    chat.handle(1, 1, 'next destination yard; reposition 20; availability blocked; '
+                      'duration 6 hours; handling liftgate; payout goal 480; counter 650')
+    chat.handle(1, 1, 'counter waiting for revised terms')
+    first = inbox._opening.get(1, 1)
+    inbox._opening.confirm(1, 1, first.revision)
+
+    submit_shot(inbox, token(inbox), update=60, message=60)
+    assert worker(inbox, []).tick() == 'completed'
+    second = inbox._opening.get(1, 1)
+    assert not second.confirmed
+    assert inbox._conversation_states['a']['step'] == 'trip'
+    assert second.trip.next_destination is None
+    assert second.trip.availability == 'unknown'
+    assert second.trip.duration_note is second.trip.handling_note is None
+    assert second.counter_offer is second.counter_note is None
+    assert second.pricing.reposition_miles is second.pricing.target_total_payout is None
+    assert second.pricing.target_all_mile_rpm == saved.profile.target_all_mile_rpm
+    assert inbox._opening.get_profile(1, 1) == saved.profile
+    assert load(inbox) == saved
+
+    chat.handle(1, 1, 'next destination home; deadhead 30; reposition 35; availability feasible')
+    home = inbox._opening.get(1, 1)
+    assert home.trip.next_destination == 'home'
+    inbox._opening.confirm(1, 1, home.revision)
+    result = inbox._opening.evaluate(1, 1, home.revision)
+    assert result['total_miles'] == '245'
+    assert result['estimated_operating_cost'] == '306.25'
+    assert result['target_revenue'] == '490.00'
+
+    chat.handle(1, 1, 'next destination yard')
+    changed = inbox._opening.get(1, 1)
+    assert not changed.confirmed
+    assert changed.pricing.reposition_miles is None

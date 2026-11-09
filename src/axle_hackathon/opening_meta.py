@@ -103,39 +103,23 @@ class OpeningDelegator:
                 draft = parse_extraction_response(response)
             except Exception:
                 raise ValueError('Invalid model extraction; no draft published') from None
+            # A new opportunity starts with truck defaults and fresh trip facts.
             try:
-                previous = self._sessions.get(user, chat)
-                # A total-dollar goal belongs to one opportunity, never the next screenshot.
-                pricing = previous.pricing.model_copy(update={'target_total_payout': None})
-                trip, counter = previous.trip, (
-                    previous.counter_offer, previous.counter_note)
-                sources = {key: value for key, value in previous.sources.items()
-                           if key not in ('payout', 'loaded_miles', 'deadhead_miles', 'weight_lbs',
-                                          'target_total_payout')}
+                profile = self._sessions.get_profile(user, chat)
             except KeyError:
-                try:
-                    template = self._sessions.get_profile(user, chat)
-                except KeyError:
-                    template = None
-                pricing = OpeningPricing(
-                    operating_cpm=template.operating_cpm if template else None,
-                    expense_claim=template.expense_claim if template else None,
-                    target_all_mile_rpm=template.target_all_mile_rpm if template else None,
-                    minimum_job_charge=template.minimum_job_charge if template else None)
-                trip, counter, sources = None, (None, None), (
-                    {name: 'profile' for name in (
-                        'operating_cpm', 'target_all_mile_rpm', 'minimum_job_charge')
-                     if template is not None and getattr(template, name) is not None})
-            sources = dict(sources,
-                payout='screenshot', loaded_miles='screenshot',
-                deadhead_miles='screenshot', weight_lbs='screenshot')
-            # A new screenshot carries carrier pricing, trip context and any
-            # counteroffer forward unconfirmed; the new exact revision always
-            # needs fresh review and confirmation.
+                profile = None
+            pricing = OpeningPricing(
+                operating_cpm=profile.operating_cpm if profile else None,
+                expense_claim=profile.expense_claim if profile else None,
+                target_all_mile_rpm=profile.target_all_mile_rpm if profile else None,
+                minimum_job_charge=profile.minimum_job_charge if profile else None)
+            sources = {name: 'profile' for name in (
+                'operating_cpm', 'target_all_mile_rpm', 'minimum_job_charge')
+                if getattr(pricing, name) is not None}
+            sources.update(dict.fromkeys(('payout', 'loaded_miles', 'deadhead_miles', 'weight_lbs'),
+                                         'screenshot'))
             snapshot = self._sessions.put(user, chat, draft, pricing,
-                                          expected_revision=expected_revision,
-                                          trip=trip, counter_offer=counter[0],
-                                          counter_note=counter[1], sources=sources)
+                                          expected_revision=expected_revision, sources=sources)
             return dict(snapshot=snapshot,
                 trace=_metadata(response, started, role='intake',
                     tool='screenshot_extraction', revision=snapshot.revision))
@@ -158,7 +142,7 @@ class OpeningDelegator:
             payload = json.dumps(dict(revision=revision,
                 facts=snapshot.draft.facts.model_dump(mode='json'),
                 pricing=snapshot.pricing.model_dump(mode='json'),
-                trip=snapshot.trip.model_dump(mode='json'),
+                trip=snapshot.trip.model_dump(mode='json', exclude={'next_destination'}),
                 counter_offer=str(snapshot.counter_offer)
                 if snapshot.counter_offer is not None else None))
             if len(payload.encode('utf-8')) > 16384:

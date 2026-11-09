@@ -354,7 +354,7 @@ def test_selection_payload_carries_no_identity_or_token(store):
     assert '"user"' not in seen['payload'] and '"chat"' not in seen['payload']
 
 
-def test_new_screenshot_carries_pricing_unconfirmed(store):
+def test_new_screenshot_clears_load_pricing_overrides(store):
     access, conversation, _ = ready_revision(store)
     conversation.handle(1, 1, 'target 2.50')
     store._opening.confirm(1, 1, 2)
@@ -363,7 +363,7 @@ def test_new_screenshot_carries_pricing_unconfirmed(store):
     assert worker(store, calls).tick() == 'completed'
     snapshot = store._opening.get(1, 1)
     assert snapshot.revision == 3 and not snapshot.confirmed
-    assert str(snapshot.pricing.target_all_mile_rpm) == '2.50'
+    assert snapshot.pricing.target_all_mile_rpm is None
     with pytest.raises(ValueError):
         store.submit(1, 1, 66, 'opening', token=access.token, revision=3, message_id=66)
 
