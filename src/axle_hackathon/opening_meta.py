@@ -139,7 +139,8 @@ class OpeningDelegator:
             payload = json.dumps(dict(revision=revision,
                 facts=snapshot.draft.facts.model_dump(mode='json'),
                 pricing=snapshot.pricing.model_dump(mode='json'),
-                trip=snapshot.trip.model_dump(mode='json', exclude={'next_destination'}),
+                trip=snapshot.trip.model_dump(mode='json',
+                    include={'availability', 'duration_note', 'handling_note'}),
                 counter_offer=str(snapshot.counter_offer)
                 if snapshot.counter_offer is not None else None))
             if len(payload.encode('utf-8')) > 16384:

@@ -68,3 +68,27 @@ and restart, carrier isolation, stale review/version rejection, partial edits,
 expiry, save failure, deletion failure, pending privacy recovery, repeated
 webhook delivery, optional nickname, profile viewing and chat-only host routes.
 All provider and Telegram transport evidence in these tests is mocked.
+
+## Trip mileage and location
+
+Development date: November 9, 2026. Offline evidence only.
+
+The chat accepts city or site labels for truck position, pickup, delivery and
+next destination. Reply `home` to choose home and `reposition 35` to supply the
+miles from delivery to home. Enter individual mileage legs as needed. The review
+shows the three legs together, their sources and which values are unknown.
+A screenshot estimate stays advisory until the carrier supplies a planning value.
+
+A one-time Telegram location message can set the truck position after a screenshot
+draft exists. Axle rounds the coordinates to two decimal places and keeps the
+approximate pin in the active trip. It does not echo or send coordinates to the
+pricing provider or write them to SQLite. Use a city or site label for typed
+locations. Telegram retains its own message history. Location capture makes no
+routing, geocoding or mileage request.
+
+An endpoint edit clears the mileage for its adjoining legs unless the carrier
+enters replacement mileage in the same message. Each correction opens a new
+revision. A new screenshot starts a fresh trip and reuses the confirmed truck
+profile. Offline webhook and worker tests use two fictional loads, verify replay
+deduplication and reproduce the 245-mile Load 2 calculation before changing home
+to the yard and checking the fresh mileage and confirmation requirements.
