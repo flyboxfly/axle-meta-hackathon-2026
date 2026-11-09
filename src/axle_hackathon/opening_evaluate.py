@@ -20,6 +20,7 @@ class OfferInputs(Frozen):
     reposition_miles: Decimal | None = None
     operating_cpm: Decimal | None = None
     target_all_mile_rpm: Decimal | None = None
+    target_total_payout: Decimal | None = None
     minimum_job_charge: Decimal | None = None
     schedule_feasible: bool | None = None
     pricing_source: str = 'carrier supplied'
@@ -33,6 +34,12 @@ def evaluate_offer(data: OfferInputs) -> dict:
         raise ValueError('Explicit compensation source required')
     if data.compensation < 0 or data.compensation > 1000000:
         raise ValueError('Bounded compensation required')
+    if data.target_total_payout is not None:
+        if (not data.target_total_payout.is_finite()
+                or not 0 < data.target_total_payout <= 1000000
+                or data.target_total_payout % Decimal("0.01") != 0
+                or data.target_all_mile_rpm is not None):
+            raise ValueError('Choose one bounded total payout goal or per-mile target')
     missing = []
     if data.loaded_miles is None:
         missing.append('loaded_miles')
@@ -42,7 +49,7 @@ def evaluate_offer(data: OfferInputs) -> dict:
         missing.append('reposition_miles')
     if data.operating_cpm is None:
         missing.append('operating_cpm')
-    if data.target_all_mile_rpm is None:
+    if data.target_all_mile_rpm is None and data.target_total_payout is None:
         missing.append('carrier_revenue_target')
     if data.minimum_job_charge is None:
         missing.append('minimum_job_charge')
@@ -57,6 +64,8 @@ def evaluate_offer(data: OfferInputs) -> dict:
     # Single CPM cost term; segments counted once; minimum compared, never added.
     cost = miles * data.operating_cpm if miles is not None and data.operating_cpm is not None else None
     target_revenue = miles * data.target_all_mile_rpm if miles is not None and data.target_all_mile_rpm is not None else None
+    if data.target_total_payout is not None:
+        target_revenue = data.target_total_payout
     gap = max(Decimal(0), target_revenue - data.compensation) if target_revenue is not None else None
     surplus = data.compensation - cost if cost is not None else None
     decision = 'NEED_MORE_INFORMATION'
@@ -81,7 +90,8 @@ def evaluate_offer(data: OfferInputs) -> dict:
         revenue_gap_to_target=money(gap) if gap is not None else None,
         estimated_operating_surplus=money(surplus) if surplus is not None else None,
         missing_information=missing,
-        benchmark_source='carrier_confirmed' if data.target_all_mile_rpm is not None else 'carrier_unknown',
+        benchmark_source='carrier_confirmed' if (data.target_all_mile_rpm is not None
+            or data.target_total_payout is not None) else 'carrier_unknown',
         pricing_source=data.pricing_source,
         assumptions=[
             'Compensation is the confirmed posted offer or owner counteroffer; nothing is added.',

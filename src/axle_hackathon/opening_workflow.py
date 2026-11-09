@@ -13,7 +13,7 @@ from threading import RLock
 import re
 from typing import Literal
 
-from pydantic import Field as ModelField
+from pydantic import Field as ModelField, model_validator
 
 from .opening_bid import OpeningBidInputs, calculate_opening_bid
 from .opening_evaluate import OfferInputs, evaluate_offer
@@ -32,12 +32,19 @@ class OpeningProfile(Frozen):
 
 
 class OpeningPricing(Frozen):
+    target_total_payout: Decimal | None = ModelField(default=None, gt=0, le=1000000, multiple_of=Decimal("0.01"))
     target_all_mile_rpm: Decimal | None = None
     operating_cpm: Decimal | None = None
     expense_claim: str | None = None
     minimum_job_charge: Decimal | None = None
     reposition_miles: Decimal | None = None
     pricing_source: str = 'carrier supplied'
+
+    @model_validator(mode='after')
+    def one_goal_basis(self):
+        if self.target_total_payout is not None and self.target_all_mile_rpm is not None:
+            raise ValueError('Choose a total payout goal or a per-mile target')
+        return self
 
 
 class OpeningTrip(Frozen):
@@ -126,7 +133,7 @@ def pricing_blockers(snapshot: OpeningSnapshot) -> list[str]:
         blockers.append('reposition_miles')
     if pricing.operating_cpm is None:
         blockers.append('operating_cpm')
-    if pricing.target_all_mile_rpm is None:
+    if pricing.target_all_mile_rpm is None and pricing.target_total_payout is None:
         blockers.append('target_all_mile_rpm')
     if pricing.minimum_job_charge is None:
         blockers.append('minimum_job_charge')
@@ -142,7 +149,7 @@ MISSING_INPUT_LABELS = {
     'deadhead_miles': 'miles to pickup',
     'reposition_miles': 'miles after delivery',
     'operating_cpm': 'your cost per mile',
-    'target_all_mile_rpm': 'your asking rate per mile',
+    'target_all_mile_rpm': 'your payout goal (total dollars or per mile)',
     'minimum_job_charge': 'lowest total you will accept',
     'expense_claim': 'all-operating-expense cost basis',
 }
@@ -177,7 +184,8 @@ def render_review(snapshot: OpeningSnapshot, profile: OpeningProfile | None = No
         f'loaded miles: {tagged("loaded_miles", facts.loaded_miles)}',
         f'miles to pickup: {tagged("deadhead_miles", facts.deadhead_miles)}',
         f'weight lbs: {tagged("weight_lbs", facts.weight_lbs)}',
-        'Your rates (both apply to all trip miles below):',
+        'Your pricing inputs (rates use all trip miles below):',
+        f'desired total payout: {tagged("target_total_payout", pricing.target_total_payout)}',
         f'your asking rate per mile: {tagged("target_all_mile_rpm", pricing.target_all_mile_rpm)}',
         f'your cost per mile: {tagged("operating_cpm", pricing.operating_cpm)}',
         f'cost basis: {display_expense_claim(pricing.expense_claim)}',
@@ -189,6 +197,11 @@ def render_review(snapshot: OpeningSnapshot, profile: OpeningProfile | None = No
         f'expected duration: {tagged("duration_note", trip.duration_note)}',
         f'availability: {tagged("availability", trip.availability if trip.availability != "unknown" else None)}',
         f'handling notes: {tagged("handling_note", trip.handling_note)}']
+    if pricing.target_total_payout is not None:
+        segments = (facts.loaded_miles, facts.deadhead_miles, pricing.reposition_miles)
+        miles = sum(segments) if all(v is not None for v in segments) else None
+        rate = f'${pricing.target_total_payout / miles:.2f}/mi' if miles else 'pending complete mileage'
+        lines.append(f'Total payout goal equivalent: {rate} across all trip miles; total dollars stay fixed.')
     compensation, source = effective_compensation(snapshot)
     lines.append(f'evaluated compensation: {shown(compensation)} [{source}]')
     if snapshot.counter_note:
@@ -327,6 +340,7 @@ class OpeningSessions:
                 operating_cpm=snapshot.pricing.operating_cpm,
                 expense_basis='all_operating_expenses',
                 target_all_mile_rpm=snapshot.pricing.target_all_mile_rpm,
+                target_total_payout=snapshot.pricing.target_total_payout,
                 minimum_job_charge=snapshot.pricing.minimum_job_charge,
                 pricing_source=snapshot.pricing.pricing_source))
             self._results[self._carrier(user, chat)] = ('opening_bid', result)
@@ -349,6 +363,7 @@ class OpeningSessions:
                 reposition_miles=snapshot.pricing.reposition_miles,
                 operating_cpm=snapshot.pricing.operating_cpm,
                 target_all_mile_rpm=snapshot.pricing.target_all_mile_rpm,
+                target_total_payout=snapshot.pricing.target_total_payout,
                 minimum_job_charge=snapshot.pricing.minimum_job_charge,
                 schedule_feasible={'feasible': True, 'blocked': False}.get(
                     snapshot.trip.availability),

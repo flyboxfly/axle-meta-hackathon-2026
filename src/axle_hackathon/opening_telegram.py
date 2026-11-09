@@ -25,7 +25,9 @@ PROFILE_PROMPT = ('Send your carrier profile in one message (one item per line, 
     'by semicolons). Labels: cpm ($/mile, all operating expenses), target ($/mile revenue), '
     'minimum (job charge, or none), equipment, context. Example:\n'
     'cpm 1.25\ntarget 2.50\nminimum 100\nequipment 26ft box truck\ncontext solo, no hazmat')
-TRIP_PROMPT = ('Send trip details in one message, or "skip". Labels: deadhead (miles to pickup), '
+TRIP_PROMPT = ('What total payout would make this load worth taking? Reply "payout goal 480" '
+    'for a gross load payout goal, or keep your profile per-mile target. '
+    'Send trip details in one message, or "skip". Labels: deadhead (miles to pickup), '
     'reposition (extra miles), duration, availability (feasible, blocked, or unknown), handling. Example:\n'
     'deadhead 40\nreposition 20\nduration 6 hours\navailability feasible\nhandling liftgate required')
 PHOTO_PROMPT = ('Send one PNG or JPEG screenshot of the opportunity. '
@@ -74,6 +76,7 @@ FIELD_LABELS = {
     'weight_lbs': ('weight', 'weight lbs', 'wt'),
     'target_all_mile_rpm': ('target', 'target rpm', 'revenue target', 'all-mile rpm', 'all mile rpm'),
     'operating_cpm': ('cpm', 'operating cpm', 'operating cost', 'all-in cpm', 'all in cpm'),
+    'target_total_payout': ('total payout goal', 'payout goal', 'total goal'),
     'minimum_job_charge': ('minimum', 'minimum charge', 'min charge', 'min'),
     'reposition_miles': ('reposition', 'reposition miles', 'reposition mi', 'repo'),
     'duration_note': ('duration', 'expected duration', 'job duration', 'time'),
@@ -332,7 +335,16 @@ class OpeningConversation:
         except PermissionError:
             self._flows.pop(carrier, None)
             raise
+        goal = re.fullmatch(r'\s*I want\s+\$([\d,]+(?:\.\d{1,2})?)\s+total[.!]?\s*', text, re.IGNORECASE)
+        if goal:
+            text = 'payout goal ' + goal.group(1)
+        elif re.search(r'\b(clear|profit|daily|weekly|per day|per week)\b', text, re.IGNORECASE):
+            return self._prompt(carrier, 'Is that a gross payout goal for this load, a profit goal, '
+                'or a daily/weekly goal? For a gross load goal reply: payout goal 480. '
+                'Profit and period goals need a confirmed cost and allocation basis first.')
         pairs = parse_fields(text, tuple(FIELD_LABELS))
+        if 'target_total_payout' in pairs and 'target_all_mile_rpm' in pairs:
+            raise ValueError('Choose a total payout goal or a per-mile target, not both')
         snapshot = self.opening.get(user, chat)
         updated = self._apply_pairs(user, chat, snapshot, pairs)
         flow['revision'] = updated.revision
@@ -398,6 +410,8 @@ def validate_profile_pairs(pairs):
 
 def apply_pairs_to_snapshot(opening, user, chat, snapshot, pairs):
     """Shared correction/trip/counteroffer application. Creates one new revision."""
+    if 'target_total_payout' in pairs and 'target_all_mile_rpm' in pairs:
+        raise ValueError('Choose a total payout goal or a per-mile target, not both')
     for name, raw in pairs.items():
         if name not in FIELD_LABELS:
             raise ValueError(f'Unexpected field {name!r}'[:80])
@@ -464,6 +478,11 @@ def apply_pairs_to_snapshot(opening, user, chat, snapshot, pairs):
                 if name == 'weight_lbs' and facts[name] == 0:
                     facts[name] = None
                     weight_placeholder = True
+        elif name == 'target_total_payout':
+            pricing[name] = None if parsed is None else _decimal(
+                _number(parsed, name=name), name=name, low=Decimal(0),
+                high=Decimal(1000000), allow_zero=False)
+            pricing['target_all_mile_rpm'] = None
         elif name == 'minimum_job_charge':
             if parsed is None:
                 raise ValueError('Minimum charge must be supplied, including explicit zero')
@@ -489,6 +508,11 @@ def apply_pairs_to_snapshot(opening, user, chat, snapshot, pairs):
             pricing[name] = _decimal(_number(parsed, name=name), name=name,
                                      low=Decimal(bounds[0]), high=Decimal(bounds[1]),
                                      allow_zero=bounds[2])
+        if name == 'target_all_mile_rpm':
+            pricing['target_total_payout'] = None
+            sources.pop('target_total_payout', None)
+        elif name == 'target_total_payout':
+            sources.pop('target_all_mile_rpm', None)
         sources[name if name != 'counter' else 'counter_offer'] = 'carrier'
     if offer is None:
         sources.pop('counter_offer', None)
