@@ -841,6 +841,35 @@ def test_truncated_live_shape_reproduces_uncertain_no_draft(store):
         client.close()
 
 
+@pytest.mark.parametrize(('body', 'category'), [
+    (response(200, json_value={'status': 'completed', 'output': 'invalid-shape'}),
+     'extraction_response_shape'),
+    (rest_extraction('private-fixture', status='incomplete'), 'extraction_incomplete'),
+    (rest_extraction('private-fixture', status='incomplete', reason='max_output_tokens'),
+     'extraction_truncated'),
+    (rest_extraction(''), 'extraction_empty'),
+    (rest_extraction('private-fixture'), 'extraction_schema'),
+])
+def test_screenshot_failure_persists_only_fixed_category(store, body, category):
+    access = session(store)
+    meta = []
+    worker, client = mock_stack(store, stage_handler(meta, model=lambda request: body))
+    try:
+        submit_jpeg(store, access.token)
+        assert worker.tick() == 'uncertain'
+        assert worker.tick() == 'idle'
+        assert len(meta) == 1
+        assert store._db.execute('SELECT SUM(attempts) FROM pilot_budget').fetchone() == (1,)
+        assert store._db.execute(
+            'SELECT status, category FROM pilot_updates JOIN pilot_failure_categories '
+            'USING (update_id)').fetchall() == [('uncertain', category)]
+        assert 'private-fixture' not in '\n'.join(store._db.iterdump())
+        with pytest.raises(KeyError):
+            store._opening.get(1, 1)
+    finally:
+        client.close()
+
+
 def test_reasoning_tokens_recorded_in_trace(store):
     access = session(store)
     inner = delegator(store, [], image_text=draft_text())

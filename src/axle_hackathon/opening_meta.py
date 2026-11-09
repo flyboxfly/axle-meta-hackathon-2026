@@ -13,6 +13,7 @@ from .opening_intake import (
     normalize_screenshot, parse_extraction_response,
 )
 from .opening_workflow import OpeningPricing, pricing_blockers
+from .pilot_execution import ExtractionResponseError
 
 PRICING_INSTRUCTION_VERSION = 'opening-pricing-v1'
 PRICING_INSTRUCTIONS = '''You are Axle's pricing reviewer in an owner-operated opening-price test.
@@ -94,15 +95,15 @@ class OpeningDelegator:
             started = monotonic()
             try:
                 response = self._image.responses.create(**payload)
-            except Exception as exc:
-                if 'Invalid provider response' in str(exc):
-                    raise ValueError(
-                        'Invalid model extraction; no draft published') from None
+            except ExtractionResponseError:
+                raise
+            except Exception:
                 raise RuntimeError('Model extraction failed; no automatic retry') from None
             try:
                 draft = parse_extraction_response(response)
-            except Exception:
-                raise ValueError('Invalid model extraction; no draft published') from None
+            except ValueError:
+                raise ExtractionResponseError('extraction_schema',
+                                              'Screenshot response failed draft validation') from None
             # A new opportunity starts with truck defaults and fresh trip facts.
             try:
                 profile = self._sessions.get_profile(user, chat)

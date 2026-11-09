@@ -15,6 +15,7 @@ from typing import Literal
 from pydantic import Field, ValidationError
 
 from .pilot import Frozen
+from .pilot_execution import ExtractionResponseError
 from .vision import MAX_IMAGE_BYTES, normalize_image
 
 WONDER_MODEL = 'muse-wonder-1.0'
@@ -222,9 +223,12 @@ def parse_extraction_response(response) -> ScreenshotDraft:
     """Validate one completed Wonder extraction; incomplete results fail closed."""
     if getattr(response, 'status', None) != 'completed':
         if getattr(response, 'incomplete_reason', None) == 'max_output_tokens':
-            raise RuntimeError('Screenshot response truncated; output budget exhausted')
-        raise RuntimeError('Screenshot response incomplete or empty')
+            raise ExtractionResponseError('extraction_truncated',
+                                          'Screenshot response truncated; output budget exhausted')
+        raise ExtractionResponseError('extraction_incomplete',
+                                      'Screenshot response incomplete or empty')
     text = getattr(response, 'output_text', None)
     if not isinstance(text, str) or not text.strip():
-        raise RuntimeError('Screenshot response incomplete or empty')
+        raise ExtractionResponseError('extraction_empty',
+                                      'Screenshot response incomplete or empty')
     return ScreenshotDraft.validated_text(text)

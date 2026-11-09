@@ -6,7 +6,7 @@ from types import SimpleNamespace
 from .opening_intake import (
     MAX_IMAGE_REQUEST_BYTES, MAX_RESPONSE_CHARS, TELEGRAM_HOSTS, validate_file_path,
 )
-from .pilot_execution import _seconds
+from .pilot_execution import ExtractionResponseError, _seconds
 from .vision import MAX_IMAGE_BYTES
 
 
@@ -185,7 +185,9 @@ class MetaImageClient:
                 id=data.get('id'),usage=data.get('usage'))
             namespace.output=[SimpleNamespace(**item) for item in data.get('output',[])]
             return namespace
-        except Exception:raise RuntimeError('Invalid provider response') from None
+        except (KeyError, TypeError, ValueError):
+            raise ExtractionResponseError('extraction_response_shape',
+                                          'Invalid provider response') from None
 
 
 class TelegramMedia:
