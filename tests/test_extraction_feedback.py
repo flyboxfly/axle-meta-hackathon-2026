@@ -8,7 +8,7 @@ from test_h15_opening_workflow import store, session, delegator, draft_text, sub
 
 
 @pytest.mark.parametrize('field,value,category', [
-    ('issues', ['private'] * 7, 'extraction_collection_limit'),
+    ('issues', ['private'] * 7, 'extraction_issues_count'),
     ('issues', ['private' * 41], 'extraction_issue_limit'),
     ('evidence', {'payout': 'private' * 34}, 'extraction_evidence_limit'),
 ])
@@ -66,3 +66,26 @@ def test_failure_notice_requires_current_consent(store):
     submit_shot(store, access.token)
     assert worker.tick() == 'uncertain'
     assert sent == []
+
+
+def test_requested_schema_matches_local_limits():
+    from axle_hackathon.opening_intake import (
+        build_extraction_request, MAX_ISSUES, MAX_ISSUE_CHARS, MAX_EVIDENCE_CHARS)
+    request = build_extraction_request(b'fictional-image', 'image/png')
+    fields = request['text']['format']['schema']['properties']
+    assert fields['issues']['maxItems'] == MAX_ISSUES
+    assert fields['issues']['items']['maxLength'] == MAX_ISSUE_CHARS
+    assert all(field['maxLength'] == MAX_EVIDENCE_CHARS
+               for field in fields['evidence']['properties'].values())
+    data = json.loads(draft_text())
+    data['issues'] = ['x' * MAX_ISSUE_CHARS] * MAX_ISSUES
+    assert len(ScreenshotDraft.validated_text(json.dumps(data)).issues) == MAX_ISSUES
+
+
+def test_extra_evidence_key_remains_schema_failure():
+    data = json.loads(draft_text())
+    data['evidence'] = dict.fromkeys(['payout', 'loaded_miles', 'deadhead_miles',
+                                     'weight_lbs', 'extra'], '')
+    with pytest.raises(ExtractionResponseError) as exc:
+        ScreenshotDraft.validated_text(json.dumps(data))
+    assert exc.value.failure_category == 'extraction_schema'

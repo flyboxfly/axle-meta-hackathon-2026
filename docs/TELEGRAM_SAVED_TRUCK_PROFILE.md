@@ -110,3 +110,18 @@ pause and contact the operator before uploading again.
 Verification uses fictional responses and injected senders. No live retry is
 claimed. This change improves diagnosis and feedback; the rejected response was
 not retained, so its specific limit violation remains unknown.
+
+## Extraction schema limits
+
+November 10, 2026. The PR #21 owner retest reported one reserved screenshot
+attempt and extraction_collection_limit; the failure notice reached Telegram.
+The request schema now declares maxItems=6 for issues, maxLength=240 for each
+issue and maxLength=200 for evidence. Local validation retains those limits.
+New failures identify excessive issue count. Additional evidence keys fail schema
+validation before the collection-size check. Historical categories remain supported. No response is truncated or repaired.
+
+Meta's structured-output documentation describes strict schemas but does not
+explicitly enumerate maxItems/maxLength support for Muse Wonder:
+https://dev.meta.ai/docs/structured-output
+Provider acceptance of this exact schema remains pending a live check. Offline
+tests verify the outgoing request, boundary acceptance and excess-count rejection.
