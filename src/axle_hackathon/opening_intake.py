@@ -57,7 +57,7 @@ class ScreenshotDraft(Frozen):
     @classmethod
     def validated_text(cls, text):
         if not isinstance(text, str) or len(text) > MAX_RESPONSE_CHARS:
-            raise ExtractionResponseError('extraction_limits', 'Extraction response exceeds limit')
+            raise ExtractionResponseError('extraction_response_limit', 'Extraction response exceeds limit')
         try:
             result = cls.model_validate_json(text)
         except ValidationError as exc:
@@ -67,13 +67,14 @@ class ScreenshotDraft(Frozen):
                 raise ExtractionResponseError('extraction_json',
                                               'Extraction response is not valid JSON') from None
             if 'too_long' in kinds:
-                raise ExtractionResponseError('extraction_limits',
+                raise ExtractionResponseError('extraction_collection_limit',
                                               'Extraction collection exceeds limit') from None
             raise ExtractionResponseError('extraction_schema',
                                           'Extraction response failed validation') from None
-        if (any(len(value) > MAX_EVIDENCE_CHARS for value in result.evidence.values())
-                or any(len(value) > MAX_ISSUE_CHARS for value in result.issues)):
-            raise ExtractionResponseError('extraction_limits', 'Extraction notes exceed limit')
+        if any(len(value) > MAX_EVIDENCE_CHARS for value in result.evidence.values()):
+            raise ExtractionResponseError('extraction_evidence_limit', 'Extraction evidence exceeds limit')
+        if any(len(value) > MAX_ISSUE_CHARS for value in result.issues):
+            raise ExtractionResponseError('extraction_issue_limit', 'Extraction issue exceeds limit')
         facts = result.facts.model_dump()
         for name in IntakeFacts.model_fields:
             if facts[name] is not None and not result.evidence.get(name, '').strip():
