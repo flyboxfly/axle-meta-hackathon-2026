@@ -92,3 +92,21 @@ revision. A new screenshot starts a fresh trip and reuses the confirmed truck
 profile. Offline webhook and worker tests use two fictional loads, verify replay
 deduplication and reproduce the 245-mile Load 2 calculation before changing home
 to the yard and checking the fresh mileage and confirmation requirements.
+
+## Extraction failure feedback
+
+November 10, 2026. The owner reported one screenshot attempt with status uncertain
+and category extraction_limits, with no draft reply. The webhook was removed with
+zero pending updates. The category cannot identify which original limit failed.
+
+The recovery increment splits new limit failures into response, collection,
+evidence and issue length categories. Historical extraction_limits rows remain
+readable. Extraction validation failures attempt one fixed Telegram notice under
+the existing consent, revision and delivery-claim guards. Notification failure
+does not retry extraction or overwrite the original extraction cause. The attempt
+remains uncertain even when the notice is delivered. Refresh asks the carrier to
+pause and contact the operator before uploading again.
+
+Verification uses fictional responses and injected senders. No live retry is
+claimed. This change improves diagnosis and feedback; the rejected response was
+not retained, so its specific limit violation remains unknown.

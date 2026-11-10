@@ -335,8 +335,8 @@ class OpeningConversation:
         notice = flow.pop('screenshot_notice', False)
         def done(prompt):
             if notice:
-                prompt += ('\nLast screenshot was not processed; no draft was created and '
-                           'nothing was sent. Send a new PNG or JPEG screenshot, or /forget.')
+                prompt += ('\nLast screenshot did not produce a usable draft. '
+                           'Pause this test and contact the operator before another upload, or /forget.')
             return self._prompt(carrier, prompt, save=not notice)
         if flow['step'] in ('profile', 'profile_review'):
             if flow['step'] == 'profile_review' and flow.get('profile_values') is not None:
@@ -1139,9 +1139,32 @@ def run_screenshot(inbox, delegator, send, *, user: int, chat: int, update_id: i
         pool.send(chat, text, guard, send)
         inbox.finish(user, chat, update_id, claim, success=True)
     except Exception as exc:
+        category = failure_category_for(exc, stage=stage)
+        if stage == 'attempt' and category.startswith('extraction_'):
+            def failure_guard():
+                with inbox._lock:
+                    inbox._access(user, chat, token)
+                    try:
+                        current_revision = opening.get(user, chat).revision
+                    except KeyError:
+                        current_revision = 0
+                    if current_revision != expected:
+                        raise ValueError('Result changed')
+                    inbox.start_delivery(user, chat, update_id, claim)
+            try:
+                with inbox._lock:
+                    if inbox._delivery_pool is None:
+                        inbox._delivery_pool = DeliveryPool(None)
+                    pool = inbox._delivery_pool
+                pool.send(chat, 'Axle could not validate the screenshot extraction. '
+                    'Pause this test and contact the operator before another upload. '
+                    'The attempt remains recorded. /forget withdraws consent.',
+                    failure_guard, send)
+            except Exception:
+                pass  # A notification has one bounded attempt; retain the extraction cause.
         try:
             inbox.finish(user, chat, update_id, claim, success=False,
-                         category=failure_category_for(exc, stage=stage))
+                         category=category)
         except Exception:
             pass
         try:

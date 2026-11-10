@@ -15,6 +15,8 @@ FAILURE_CATEGORIES = frozenset({
     'provider_error', 'provider_timeout', 'invalid_model_response',
     'extraction_response_shape', 'extraction_incomplete', 'extraction_truncated',
     'extraction_empty', 'extraction_json', 'extraction_schema', 'extraction_limits',
+    'extraction_response_limit', 'extraction_collection_limit',
+    'extraction_evidence_limit', 'extraction_issue_limit',
     'media_error', 'delivery_error', 'budget_exhausted',
     'consent_unavailable', 'stale_revision', 'missing_inputs', 'unknown'})
 

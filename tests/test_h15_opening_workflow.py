@@ -852,9 +852,9 @@ def test_truncated_live_shape_reproduces_uncertain_no_draft(store):
     (rest_extraction(json.dumps(json.loads(draft_text()) | {'private-fixture': True})),
      'extraction_schema'),
     (rest_extraction(json.dumps(json.loads(draft_text()) | {'issues': ['private-fixture'] * 7})),
-     'extraction_limits'),
+     'extraction_collection_limit'),
     (rest_extraction(json.dumps(json.loads(draft_text()) | {'issues': ['private-fixture' * 20]})),
-     'extraction_limits'),
+     'extraction_issue_limit'),
 ])
 def test_screenshot_failure_persists_only_fixed_category(store, body, category):
     access = session(store)
@@ -906,8 +906,8 @@ def test_refresh_surfaces_failed_screenshot_once(store):
     worker = OpeningWorker(store, inner, lambda *_: True, global_limit=4, carrier_limit=4)
     submit_shot(store, token)
     assert worker.tick() == 'uncertain'
-    assert 'not processed' in conversation.handle(1, 1, '/refresh')
-    assert 'not processed' not in conversation.handle(1, 1, '/refresh')
+    assert 'did not produce a usable draft' in conversation.handle(1, 1, '/refresh')
+    assert 'did not produce a usable draft' not in conversation.handle(1, 1, '/refresh')
 
 
 def test_failure_hint_lifecycle_over_webhook(store):
@@ -941,10 +941,10 @@ def test_failure_hint_lifecycle_over_webhook(store):
         assert photo(5) == 'queued'
         assert worker.tick() == 'uncertain'
         assert command('/refresh', 6) == 'processed'
-        assert 'not processed' in sent[-1]
+        assert 'did not produce a usable draft' in sent[-1]
         assert photo(7) == 'queued'
         assert command('/refresh', 8) == 'processed'
-        assert 'not processed' not in sent[-1]
+        assert 'did not produce a usable draft' not in sent[-1]
 
 
 def test_provider_timeout_covers_media_and_image_budgets(tmp_path):
