@@ -29,13 +29,13 @@ PROFILE_PROMPT = ('Send your carrier profile in one message (one item per line, 
     'Also supply DOT, MC if applicable, unit (or nickname), capabilities, arrangement '
     '(owned, financed, rented), and optional home base. Numbers are carrier-supplied, '
     'not proof of authorization. Unknown items may be skipped.')
-TRIP_PROMPT = ('What total payout would make this load worth taking? Reply "payout goal 480" '
-    'for a gross load payout goal, or keep your profile per-mile target. '
-    'Send trip details in one message, or "skip". Labels: deadhead (miles to pickup), '
-    'next destination, reposition (miles from delivery to your next stop), duration, '
-    'availability (feasible, blocked, or unknown), handling. Example:\n'
-    'deadhead 40\nnext destination home\nreposition 20\nduration 6 hours\n'
-    'availability feasible\nhandling liftgate required')
+TRIP_PROMPT = ('Reply "payout goal 480" to set a gross payout goal, or keep your profile rate. '
+    'Use city or site labels: truck position, pickup, delivery, next destination. '
+    'While parked, you can share a one-time truck pin. Axle keeps an approximate pin '
+    'for this trip only. Enter the miles separately. '
+    'Send only the fields you need, for example "reposition 35", or reply "skip". '
+    'You can also send "next destination home", or just "home". '
+    'Optional: duration, availability (feasible, blocked, or unknown), handling.')
 PHOTO_PROMPT = ('Send one PNG or JPEG screenshot of the opportunity. '
     'Processing before consent is never performed; /forget withdraws consent.')
 
@@ -84,6 +84,9 @@ FIELD_LABELS = {
     'operating_cpm': ('cpm', 'operating cpm', 'operating cost', 'all-in cpm', 'all in cpm'),
     'target_total_payout': ('total payout goal', 'payout goal', 'total goal'),
     'minimum_job_charge': ('minimum', 'minimum charge', 'min charge', 'min'),
+    'truck_position': ('truck position', 'current position'),
+    'pickup': ('pickup',),
+    'delivery': ('delivery',),
     'next_destination': ('next destination', 'destination'),
     'reposition_miles': ('reposition', 'reposition miles', 'reposition mi', 'repo'),
     'duration_note': ('duration', 'expected duration', 'job duration', 'time'),
@@ -180,6 +183,7 @@ class OpeningConversation:
                 self._flows[carrier] = dict(step='memory', nonce=token_urlsafe(12), notice=notice,
                                            values={}, token=None)
                 return self._prompt(carrier, notice.text + '\nReal opening-price test. '
+                    'Optional location pins are rounded and held in active trip memory. '
                     'Reply session or remember. Reply only while safely parked.')
             flow = self._flows.get(carrier)
             if flow is None:
@@ -399,10 +403,14 @@ class OpeningConversation:
         except PermissionError:
             self._flows.pop(carrier, None)
             raise
+        if text.strip().lower() == 'home':
+            text = 'next destination home'
         goal = re.fullmatch(r'\s*I want\s+\$([\d,]+(?:\.\d{1,2})?)\s+total[.!]?\s*', text, re.IGNORECASE)
         if goal:
             text = 'payout goal ' + goal.group(1)
-        elif re.search(r'\b(clear|profit|daily|weekly|per day|per week)\b', text, re.IGNORECASE):
+        elif (not re.search(r'(?:^|[;\n])\s*(?:truck position|current position|pickup|'
+                            r'delivery|next destination|destination)\b', text, re.IGNORECASE)
+              and re.search(r'\b(clear|profit|daily|weekly|per day|per week)\b', text, re.IGNORECASE)):
             return self._prompt(carrier, 'Is that a gross payout goal for this load, a profit goal, '
                 'or a daily/weekly goal? For a gross load goal reply: payout goal 480. '
                 'Profit and period goals need a confirmed cost and allocation basis first.')
@@ -411,6 +419,21 @@ class OpeningConversation:
             raise ValueError('Choose a total payout goal or a per-mile target, not both')
         snapshot = self.opening.get(user, chat)
         updated = self._apply_pairs(user, chat, snapshot, pairs)
+        return self._review_trip(user, chat, carrier, flow, updated)
+
+    def share_truck_pin(self, user, chat, pin):
+        with self.inbox._lock:
+            carrier = self.inbox._carrier(user, chat)
+            flow = self._flows[carrier]
+            if flow['step'] not in ('trip', 'review', 'confirmed'):
+                raise ValueError('Send a screenshot before sharing a truck pin')
+            self.inbox._access(user, chat, flow['token'])
+            snapshot = self.opening.get(user, chat)
+            updated = apply_pairs_to_snapshot(
+                self.opening, user, chat, snapshot, {}, truck_pin=pin)
+            return self._review_trip(user, chat, carrier, flow, updated)
+
+    def _review_trip(self, user, chat, carrier, flow, updated):
         flow['revision'] = updated.revision
         flow['step'] = 'review'
         flow['trip_done'] = True
@@ -480,7 +503,15 @@ def validate_profile_pairs(pairs):
     return OpeningProfile.model_validate(values)
 
 
-def apply_pairs_to_snapshot(opening, user, chat, snapshot, pairs):
+TRIP_ENDPOINT_LEGS = {
+    'truck_position': ('deadhead_miles',),
+    'pickup': ('deadhead_miles', 'loaded_miles'),
+    'delivery': ('loaded_miles', 'reposition_miles'),
+    'next_destination': ('reposition_miles',),
+}
+
+
+def apply_pairs_to_snapshot(opening, user, chat, snapshot, pairs, *, truck_pin=None):
     """Shared correction/trip/counteroffer application. Creates one new revision."""
     if 'target_total_payout' in pairs and 'target_all_mile_rpm' in pairs:
         raise ValueError('Choose a total payout goal or a per-mile target, not both')
@@ -527,8 +558,14 @@ def apply_pairs_to_snapshot(opening, user, chat, snapshot, pairs):
                 note = stripped[:200] or None
                 if note is None:
                     raise ValueError('Invalid counter')
-        elif name in ('next_destination', 'duration_note', 'handling_note'):
+        elif name in TRIP_ENDPOINT_LEGS or name in ('duration_note', 'handling_note'):
             limit = 500 if name == 'handling_note' else 200
+            if name in ('truck_position', 'pickup', 'delivery'):
+                limit = 64
+            if name == 'next_destination' and parsed and parsed.lower() == 'home':
+                parsed = 'home'
+            if name in TRIP_ENDPOINT_LEGS and parsed is not None and len(parsed) > limit:
+                raise ValueError('Use a short city or site label')
             trip[name] = None if parsed is None else parsed.strip()[:limit] or None
             if parsed is not None and trip[name] is None:
                 raise ValueError(f'Invalid {name}')
@@ -589,12 +626,27 @@ def apply_pairs_to_snapshot(opening, user, chat, snapshot, pairs):
         elif name == 'target_total_payout':
             sources.pop('target_all_mile_rpm', None)
         sources[name if name != 'counter' else 'counter_offer'] = 'carrier'
-    if trip['next_destination'] != snapshot.trip.next_destination and 'reposition_miles' not in pairs:
-        pricing['reposition_miles'] = None
-        sources.pop('reposition_miles', None)
+    if truck_pin is not None:
+        trip['truck_position'] = None
+        trip['approximate_truck_pin'] = truck_pin
+    elif 'truck_position' in pairs:
+        trip['approximate_truck_pin'] = None
+    changed_endpoints = {name for name in TRIP_ENDPOINT_LEGS
+                         if trip[name] != getattr(snapshot.trip, name)}
+    if truck_pin is not None or trip['approximate_truck_pin'] != snapshot.trip.approximate_truck_pin:
+        changed_endpoints.add('truck_position')
+    cleared = {leg for endpoint in changed_endpoints for leg in TRIP_ENDPOINT_LEGS[endpoint]
+               if leg not in pairs}
+    for leg in cleared:
+        if leg in facts:
+            facts[leg] = None
+            marked.add(leg)
+        else:
+            pricing[leg] = None
+        sources.pop(leg, None)
     if offer is None:
         sources.pop('counter_offer', None)
-    keywords = {word for name in pairs for word in _RETIRE_KEYWORDS.get(name, ())}
+    keywords = {word for name in pairs.keys() | cleared for word in _RETIRE_KEYWORDS.get(name, ())}
     issues = [issue for issue in issues
               if not any(word in issue.lower() for word in keywords)]
     if weight_placeholder and len(issues) < 6 and not any(
@@ -682,6 +734,19 @@ def create_opening_app(inbox, *, webhook_secret: str, allowed_host: str, convers
             if message['chat']['type'] != 'private' or message['from'].get('is_bot') is not False:
                 return reply(403, 'rejected')
             text = message.get('text')
+            location = message.get('location')
+            pin = None
+            if location is not None:
+                if (text is not None or not isinstance(location, dict)
+                        or 'live_period' in location or 'venue' in message
+                        or 'forward_origin' in message
+                        or 'photo' in message or 'document' in message):
+                    return reply(400, 'unsupported_update')
+                lat, lon = location.get('latitude'), location.get('longitude')
+                if (type(lat) not in (int, float) or not -90 <= lat <= 90
+                        or type(lon) not in (int, float) or not -180 <= lon <= 180):
+                    return reply(400, 'invalid_update')
+                pin = (round(lat, 2), round(lon, 2))
             message_id = message.get('message_id')
             has_media = message.get('photo') is not None or message.get('document') is not None
             if has_media:
@@ -755,7 +820,7 @@ def create_opening_app(inbox, *, webhook_secret: str, allowed_host: str, convers
                         return reply(200, 'processed')
                 finally:
                     flow_slots.release()
-            if text is None:
+            if text is None and pin is None:
                 return reply(400, 'unsupported_command')
             if text == '/forget':
                 with inbox._lock:
@@ -858,9 +923,9 @@ def create_opening_app(inbox, *, webhook_secret: str, allowed_host: str, convers
                     except (ValueError, KeyError):
                         return reply(400, 'invalid_update')
                 return reply(200, 'queued' if accepted else 'duplicate')
-            if conversation is not None and (isinstance(text, str) and (
+            if conversation is not None and (pin is not None or (isinstance(text, str) and (
                     text.split(' ', 1)[0] in ('/start', '/reply', '/confirm', '/save_profile', '/edit', '/refresh', '/profile')
-                    or not text.startswith('/'))):
+                    or not text.startswith('/')))):
                 if send is None or conversation.inbox is not inbox:
                     return reply(503, 'unavailable')
                 if not flow_slots.acquire(blocking=False):
@@ -875,7 +940,8 @@ def create_opening_app(inbox, *, webhook_secret: str, allowed_host: str, convers
                         if claim is None:
                             return reply(200, 'duplicate')
                         try:
-                            answer = conversation.handle(user, chat, text)
+                            answer = (conversation.share_truck_pin(user, chat, pin) if pin is not None
+                                      else conversation.handle(user, chat, text))
                         except (ValueError, KeyError, TypeError, PermissionError):
                             try:
                                 answer = 'Please check your answer. No new confirmation was granted.\n' + conversation.handle(user, chat, '/refresh')

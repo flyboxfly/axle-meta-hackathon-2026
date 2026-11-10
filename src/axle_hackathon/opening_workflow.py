@@ -56,6 +56,11 @@ class OpeningPricing(Frozen):
 
 
 class OpeningTrip(Frozen):
+    truck_position: str | None = ModelField(default=None, max_length=64)
+    # Rounded in the Telegram adapter; never shown or sent for pricing.
+    approximate_truck_pin: tuple[float, float] | None = None
+    pickup: str | None = ModelField(default=None, max_length=64)
+    delivery: str | None = ModelField(default=None, max_length=64)
     next_destination: str | None = ModelField(default=None, max_length=200)
     duration_note: str | None = ModelField(default=None, max_length=200)
     availability: Literal['unknown', 'feasible', 'blocked'] = 'unknown'
@@ -94,7 +99,8 @@ def mileage_candidates(snapshot: OpeningSnapshot) -> list[dict]:
     The carrier adopts one explicitly (a correction creates a new revision
     with carrier source and needs fresh confirmation), or corrects it.
     """
-    if snapshot.draft.facts.loaded_miles is not None:
+    if (snapshot.draft.facts.loaded_miles is not None
+            or snapshot.draft.evidence.get('loaded_miles') == 'carrier correction'):
         return []
     candidates, seen = [], set()
     for issue in snapshot.draft.issues:
@@ -190,8 +196,6 @@ def render_review(snapshot: OpeningSnapshot, profile: OpeningProfile | None = No
     lines = [f'OPENING DRAFT revision {snapshot.revision} — {status}',
         'From your screenshot (check every value):',
         f'posted pay: {tagged("payout", facts.payout)}',
-        f'loaded miles: {tagged("loaded_miles", facts.loaded_miles)}',
-        f'miles to pickup: {tagged("deadhead_miles", facts.deadhead_miles)}',
         f'weight lbs: {tagged("weight_lbs", facts.weight_lbs)}',
         'Your pricing inputs (rates use all trip miles below):',
         f'desired total payout: {tagged("target_total_payout", pricing.target_total_payout)}',
@@ -203,7 +207,14 @@ def render_review(snapshot: OpeningSnapshot, profile: OpeningProfile | None = No
         f'truck: {shown(profile.unit_number or profile.truck_nickname) if profile else "unknown"} [profile]',
         f'operating context: {shown(profile.operating_context) if profile else "unknown"} [profile]',
         'This trip:',
+        'truck position: ' + ('shared pin [carrier; approximate]' if trip.approximate_truck_pin
+                              else tagged('truck_position', trip.truck_position)),
+        f'pickup: {tagged("pickup", trip.pickup)}',
+        f'delivery: {tagged("delivery", trip.delivery)}',
         f'next destination: {tagged("next_destination", trip.next_destination)}',
+        'Mileage legs (no route verification):',
+        f'miles to pickup: {tagged("deadhead_miles", facts.deadhead_miles)}',
+        f'loaded miles: {tagged("loaded_miles", facts.loaded_miles)}',
         f'miles after delivery: {tagged("reposition_miles", pricing.reposition_miles)}',
         f'expected duration: {tagged("duration_note", trip.duration_note)}',
         f'availability: {tagged("availability", trip.availability if trip.availability != "unknown" else None)}',
@@ -222,8 +233,13 @@ def render_review(snapshot: OpeningSnapshot, profile: OpeningProfile | None = No
     for candidate in mileage_candidates(snapshot):
         lines.append('Possible pickup-to-delivery interpretation (UNCONFIRMED, from note): '
                      + candidate['value'] + ' mi'
-                     + ' — to adopt it reply: loaded ' + candidate['value']
+                     + ' (estimate) — to enter a planning value reply: loaded ' + candidate['value']
                      + ' (new revision, fresh confirmation needed), or correct it.')
+    missing_legs = [label for label, value in (
+        ('deadhead', facts.deadhead_miles), ('loaded', facts.loaded_miles),
+        ('reposition', pricing.reposition_miles)) if value is None]
+    if missing_legs:
+        lines.append('Add missing mileage with these labels: ' + ', '.join(missing_legs) + '.')
     lines.append('Use /confirm to confirm this exact revision, or correct a field.')
     return '\n'.join(lines)
 
