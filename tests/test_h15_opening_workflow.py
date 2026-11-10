@@ -852,7 +852,7 @@ def test_truncated_live_shape_reproduces_uncertain_no_draft(store):
     (rest_extraction(json.dumps(json.loads(draft_text()) | {'private-fixture': True})),
      'extraction_schema'),
     (rest_extraction(json.dumps(json.loads(draft_text()) | {'issues': ['private-fixture'] * 7})),
-     'extraction_collection_limit'),
+     'extraction_issues_count'),
     (rest_extraction(json.dumps(json.loads(draft_text()) | {'issues': ['private-fixture' * 20]})),
      'extraction_issue_limit'),
 ])

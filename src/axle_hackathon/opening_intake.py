@@ -19,7 +19,7 @@ from .pilot_execution import ExtractionResponseError
 from .vision import MAX_IMAGE_BYTES, normalize_image
 
 WONDER_MODEL = 'muse-wonder-1.0'
-REAL_INSTRUCTION_VERSION = 'opening-intake-v2'
+REAL_INSTRUCTION_VERSION = 'opening-intake-v3'
 MAX_ISSUES = 6
 MAX_ISSUE_CHARS = 240
 MAX_EVIDENCE_CHARS = 200
@@ -61,14 +61,15 @@ class ScreenshotDraft(Frozen):
         try:
             result = cls.model_validate_json(text)
         except ValidationError as exc:
-            kinds = {error['type'] for error in exc.errors(
-                include_input=False, include_context=False, include_url=False)}
+            errors = exc.errors(include_input=False, include_context=False, include_url=False)
+            kinds = {error['type'] for error in errors}
             if 'json_invalid' in kinds:
                 raise ExtractionResponseError('extraction_json',
                                               'Extraction response is not valid JSON') from None
-            if 'too_long' in kinds:
-                raise ExtractionResponseError('extraction_collection_limit',
-                                              'Extraction collection exceeds limit') from None
+            for error in errors:
+                if error['type'] == 'too_long' and error['loc'] == ('issues',):
+                    raise ExtractionResponseError('extraction_issues_count',
+                                                  'Too many extraction issues') from None
             raise ExtractionResponseError('extraction_schema',
                                           'Extraction response failed validation') from None
         if any(len(value) > MAX_EVIDENCE_CHARS for value in result.evidence.values()):
@@ -205,8 +206,10 @@ def extraction_schema() -> dict:
     return closed({
         'status': {'type': 'string', 'enum': ['UNCONFIRMED']},
         'facts': closed({name: {'type': ['number', 'null']} for name in names}),
-        'evidence': closed({name: {'type': 'string'} for name in names}),
-        'issues': {'type': 'array', 'items': {'type': 'string'}},
+        'evidence': closed({name: {'type': 'string', 'maxLength': MAX_EVIDENCE_CHARS}
+                            for name in names}),
+        'issues': {'type': 'array', 'maxItems': MAX_ISSUES,
+                   'items': {'type': 'string', 'maxLength': MAX_ISSUE_CHARS}},
     })
 
 
