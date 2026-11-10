@@ -5,6 +5,7 @@ import re
 from decimal import Decimal
 from secrets import token_urlsafe
 from threading import BoundedSemaphore
+from typing import Callable
 from contextlib import asynccontextmanager
 
 from fastapi import FastAPI, Request
@@ -157,7 +158,10 @@ _RETIRE_KEYWORDS = {
 
 class OpeningConversation:
     """Deterministic opening intake; no model extraction or synthetic reuse."""
-    def __init__(self, inbox):
+    def __init__(self, inbox, *,
+                 offline_deadhead_lookup: Callable[[tuple[float, float], str], Decimal | None] | None = None):
+        # Runs under the inbox lock. Only local fixture lookups belong here.
+        self.offline_deadhead_lookup = offline_deadhead_lookup
         self.inbox = inbox
         self._flows = inbox._conversation_states
         self.profiles = OpeningProfileStore(inbox)
@@ -430,7 +434,8 @@ class OpeningConversation:
             self.inbox._access(user, chat, flow['token'])
             snapshot = self.opening.get(user, chat)
             updated = apply_pairs_to_snapshot(
-                self.opening, user, chat, snapshot, {}, truck_pin=pin)
+                self.opening, user, chat, snapshot, {}, truck_pin=pin,
+                offline_deadhead_lookup=self.offline_deadhead_lookup)
             return self._review_trip(user, chat, carrier, flow, updated)
 
     def _review_trip(self, user, chat, carrier, flow, updated):
@@ -442,7 +447,9 @@ class OpeningConversation:
                             + '\n' + QUESTIONS)
 
     def _apply_pairs(self, user, chat, snapshot, pairs):
-        return apply_pairs_to_snapshot(self.opening, user, chat, snapshot, pairs)
+        return apply_pairs_to_snapshot(
+            self.opening, user, chat, snapshot, pairs,
+            offline_deadhead_lookup=self.offline_deadhead_lookup)
 
     def _advance(self, carrier, step, prompt):
         self._flows[carrier].update(step=step, nonce=token_urlsafe(12))
@@ -511,7 +518,8 @@ TRIP_ENDPOINT_LEGS = {
 }
 
 
-def apply_pairs_to_snapshot(opening, user, chat, snapshot, pairs, *, truck_pin=None):
+def apply_pairs_to_snapshot(opening, user, chat, snapshot, pairs, *, truck_pin=None,
+                            offline_deadhead_lookup=None):
     """Shared correction/trip/counteroffer application. Creates one new revision."""
     if 'target_total_payout' in pairs and 'target_all_mile_rpm' in pairs:
         raise ValueError('Choose a total payout goal or a per-mile target, not both')
@@ -644,6 +652,17 @@ def apply_pairs_to_snapshot(opening, user, chat, snapshot, pairs, *, truck_pin=N
         else:
             pricing[leg] = None
         sources.pop(leg, None)
+    estimated_deadhead = False
+    if (offline_deadhead_lookup is not None and 'deadhead_miles' in cleared
+            and trip['approximate_truck_pin'] is not None and trip['pickup'] is not None):
+        try:
+            estimate = offline_deadhead_lookup(trip['approximate_truck_pin'], trip['pickup'])
+        except Exception:
+            estimate = None
+        if isinstance(estimate, Decimal) and estimate.is_finite() and 0 <= estimate <= 100000:
+            facts['deadhead_miles'] = estimate
+            sources['deadhead_miles'] = 'offline route estimate'
+            estimated_deadhead = True
     if offer is None:
         sources.pop('counter_offer', None)
     keywords = {word for name in pairs.keys() | cleared for word in _RETIRE_KEYWORDS.get(name, ())}
@@ -652,10 +671,11 @@ def apply_pairs_to_snapshot(opening, user, chat, snapshot, pairs, *, truck_pin=N
     if weight_placeholder and len(issues) < 6 and not any(
             'weight' in issue.lower() for issue in issues):
         issues.append('Displayed zero weight is a placeholder requiring clarification.')
+    evidence = {**snapshot.draft.evidence, **{name: 'carrier correction' for name in marked}}
+    if estimated_deadhead:
+        evidence['deadhead_miles'] = 'offline route estimate'
     draft = ScreenshotDraft(status='UNCONFIRMED', facts=IntakeFacts.model_validate(facts),
-        evidence={**snapshot.draft.evidence,
-                  **{name: 'carrier correction' for name in marked}},
-        issues=issues)
+                            evidence=evidence, issues=issues)
     return opening.put(user, chat, draft, OpeningPricing.model_validate(pricing),
         expected_revision=snapshot.revision, trip=OpeningTrip.model_validate(trip),
         counter_offer=offer, counter_note=note, sources=sources)
