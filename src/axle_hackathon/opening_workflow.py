@@ -219,6 +219,9 @@ def render_review(snapshot: OpeningSnapshot, profile: OpeningProfile | None = No
         f'expected duration: {tagged("duration_note", trip.duration_note)}',
         f'availability: {tagged("availability", trip.availability if trip.availability != "unknown" else None)}',
         f'handling notes: {tagged("handling_note", trip.handling_note)}']
+    if snapshot.sources.get('deadhead_miles') == 'offline route estimate' and not snapshot.confirmed:
+        lines.append('Review the estimated miles to pickup before confirming, or replace them '
+                     'by replying with deadhead followed by your mileage.')
     if pricing.target_total_payout is not None:
         segments = (facts.loaded_miles, facts.deadhead_miles, pricing.reposition_miles)
         miles = sum(segments) if all(v is not None for v in segments) else None
@@ -302,7 +305,7 @@ class OpeningSessions:
             if sources is not None and (not isinstance(sources, dict)
                                         or len(sources) > 24 or any(
                                             not isinstance(k, str) or v not in (
-                                                'screenshot', 'profile', 'carrier')
+                                                'screenshot', 'profile', 'carrier', 'offline route estimate')
                                             for k, v in sources.items())):
                 raise ValueError('Valid source labels required')
             previous = self._sessions.get(carrier)
