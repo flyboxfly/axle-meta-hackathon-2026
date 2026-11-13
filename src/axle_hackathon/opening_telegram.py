@@ -11,6 +11,7 @@ from contextlib import asynccontextmanager
 from fastapi import FastAPI, Request
 from fastapi.responses import JSONResponse
 
+from .opening_tomtom import telegram_deadhead
 from .opening_profile_store import OpeningProfileStore
 from .opening_intake import IntakeFacts, ScreenshotDraft, parse_media_update
 from .opening_workflow import (OpeningPricing, OpeningProfile, OpeningTrip,
@@ -704,7 +705,8 @@ def step_trailer(step, nonce):
 
 
 def create_opening_app(inbox, *, webhook_secret: str, allowed_host: str, conversation=None, send=None,
-                       miniapp_bot_token: str | None = None, miniapp_button=None):
+                       miniapp_bot_token: str | None = None, miniapp_button=None,
+                       deadhead_adapter=None, deadhead_trucks=None):
     if not re.fullmatch(r'[A-Za-z0-9_-]{32,256}', webhook_secret):
         raise ValueError('Explicit webhook secret required')
     if not _is_valid_hostname(allowed_host):
@@ -958,7 +960,10 @@ def create_opening_app(inbox, *, webhook_secret: str, allowed_host: str, convers
                         pass
                     else:
                         return reply(200, 'queued' if accepted else 'duplicate')
-            if conversation is not None and (pin is not None or (isinstance(text, str) and (
+            route_command = isinstance(text, str) and text.split(maxsplit=1)[:1] == ['/deadhead']
+            if route_command and (deadhead_adapter is None or conversation is None):
+                return reply(400, 'unsupported_command')
+            if conversation is not None and (route_command or pin is not None or (isinstance(text, str) and (
                     text.split(' ', 1)[0] in ('/start', '/reply', '/confirm', '/save_profile', '/edit', '/refresh', '/profile', '/price')
                     or not text.startswith('/')))):
                 if send is None or conversation.inbox is not inbox:
@@ -974,19 +979,41 @@ def create_opening_app(inbox, *, webhook_secret: str, allowed_host: str, convers
                         claim = inbox.begin_flow(user, chat, data['update_id'], message_id=message_id)
                         if claim is None:
                             return reply(200, 'duplicate')
-                        try:
-                            if text == '/price':
-                                answer = price_rejection + '\n' + conversation.handle(user, chat, '/refresh')
-                            else:
-                                answer = (conversation.share_truck_pin(user, chat, pin) if pin is not None
-                                          else conversation.handle(user, chat, text))
-                        except (ValueError, KeyError, TypeError, PermissionError):
+                    try:
+                        if route_command:
+                            carrier = inbox._carrier(user, chat)
+                            truck = (deadhead_trucks or {}).get(carrier)
+                            answer = await telegram_deadhead(
+                                conversation, user, chat, text, deadhead_adapter, truck,
+                            )
+                            if answer is not None:
+                                expected = answer[1]
+                                answer = answer[0]
+                            if answer is None:
+                                inbox.finish(user, chat, data['update_id'], claim, success=False)
+                                return reply(200, 'stale')
+                        else:
+                            with inbox._lock:
+                                if text == '/price':
+                                    answer = price_rejection + '\n' + conversation.handle(user, chat, '/refresh')
+                                else:
+                                    answer = (conversation.share_truck_pin(user, chat, pin) if pin is not None
+                                              else conversation.handle(user, chat, text))
+                                flow = inbox._conversation_states.get(inbox._carrier(user, chat))
+                                expected = flow['nonce'] if flow else None
+                    except (ValueError, KeyError, TypeError, PermissionError):
+                        with inbox._lock:
                             try:
                                 answer = 'Please check your answer. No new confirmation was granted.\n' + conversation.handle(user, chat, '/refresh')
                             except (ValueError, KeyError, TypeError, PermissionError):
                                 answer = 'Your intake needs a fresh start. Use /start while safely parked.'
-                        flow = inbox._conversation_states.get(inbox._carrier(user, chat))
-                        expected = flow['nonce'] if flow else None
+                            flow = inbox._conversation_states.get(inbox._carrier(user, chat))
+                            expected = flow['nonce'] if flow else None
+                    except (Exception, asyncio.CancelledError) as exc:
+                        inbox.finish(user, chat, data['update_id'], claim, success=False)
+                        if isinstance(exc, asyncio.CancelledError):
+                            raise
+                        return reply(503, 'unavailable')
                     def guard():
                         with inbox._lock:
                             carrier = inbox._carrier(user, chat)

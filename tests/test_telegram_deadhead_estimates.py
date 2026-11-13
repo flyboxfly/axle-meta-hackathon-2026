@@ -16,7 +16,7 @@ from test_h15_opening_workflow import delegator, store
 @pytest.fixture
 def telegram(store):
     @contextmanager
-    def connect(conversation):
+    def connect(conversation, **options):
         sent = []
 
         def send(chat, text):
@@ -25,7 +25,7 @@ def telegram(store):
             return True
 
         app = create_opening_app(store, webhook_secret=SECRET, allowed_host='testserver',
-                                 conversation=conversation, send=send)
+                                 conversation=conversation, send=send, **options)
         with TestClient(app) as client:
             yield client, sent, OpeningWorker(
                 store, delegator(store, []), send, global_limit=4, carrier_limit=4)
@@ -111,3 +111,78 @@ def test_forget_acknowledges_and_deletes_saved_test_profile(store, telegram):
         assert worker.tick() == 'idle'
         assert store._db.execute('SELECT status FROM pilot_privacy').fetchone() == ('completed',)
         assert store._db.execute('SELECT COUNT(*) FROM opening_profiles').fetchone() == (0,)
+
+
+@pytest.mark.parametrize("manual_edit", [False, True])
+def test_tomtom_requires_opt_in_and_cannot_overwrite_manual_miles(store, telegram, manual_edit):
+    from concurrent.futures import ThreadPoolExecutor
+    from threading import Event
+
+    from axle_hackathon.opening_tomtom import DeadheadTruck, PickupCandidate, RoutePoint
+
+    conversation = journey(store, 'pickup Fictional Dock; loaded 180')
+    entered, release = Event(), Event()
+    calls = []
+
+    class FakeTomTom:
+        async def find_pickups(self, address):
+            calls.append(address)
+            return (
+                PickupCandidate(address="1 Fictional Dock", point=RoutePoint(latitude=40, longitude=-74)),
+                PickupCandidate(address="2 Fictional Dock", point=RoutePoint(latitude=41, longitude=-75)),
+            )
+
+        async def estimate_miles(self, origin, pickup, truck):
+            import asyncio
+            calls.append((origin, pickup, truck))
+            entered.set()
+            if manual_edit:
+                assert await asyncio.to_thread(release.wait, 5)
+            return Decimal("18.5")
+
+    truck = DeadheadTruck(height_m="3.8", width_m="2.6", length_m="10.2", weight_kg=7500)
+    carrier = store._carrier(1, 1)
+    with telegram(conversation, deadhead_adapter=FakeTomTom(),
+                  deadhead_trucks={carrier: truck}) as (client, sent, _):
+        assert post(client, 51, location={"latitude": 40.1234, "longitude": -74.1234}) == 'processed'
+        assert post(client, 52, text="/deadhead") == 'processed'
+        assert calls == []
+        assert "TomTom receives the pickup address" in sent[-1]
+        search = re.search(r'(/deadhead \S+ search)', sent[-1])[1]
+        assert post(client, 53, text=search) == 'processed'
+        assert calls == ["Fictional Dock"]
+        assert post(client, 53, text=search) == 'duplicate'
+        assert "2. 2 Fictional Dock" in sent[-1]
+        select = re.search(r'(/deadhead \S+) NUMBER', sent[-1])[1] + ' 2'
+        if manual_edit:
+            with ThreadPoolExecutor() as pool:
+                request = pool.submit(post, client, 54, text=select)
+                try:
+                    assert entered.wait(5)
+                    assert post(client, 55, text="deadhead 9") == 'processed'
+                finally:
+                    release.set()
+                assert request.result(timeout=5) == 'stale'
+        else:
+            assert post(client, 54, text=select) == 'processed'
+            assert "18.50 [TomTom estimate]" in sent[-1]
+        assert calls[1][0].latitude == Decimal("40.12")
+        assert calls[1][1].address == "2 Fictional Dock"
+        assert len(calls) == 2
+        snapshot = conversation.opening.get(1, 1)
+        assert snapshot.draft.facts.deadhead_miles == Decimal("9" if manual_edit else "18.5")
+        assert not snapshot.confirmed
+
+        if not manual_edit:
+            assert post(client, 55, text='/price') == 'processed'
+            assert 'Confirm the current draft before requesting pricing.' in sent[-1]
+            assert post(client, 55, text='/price') == 'duplicate'
+            assert post(client, 56, text='/refresh') == 'processed'
+            assert '18.50 [TomTom estimate]' in sent[-1]
+            assert post(client, 57, text=f'/edit {nonce(sent[-1])} pickup New Fictional Dock') == 'processed'
+            changed = conversation.opening.get(1, 1)
+            assert changed.draft.facts.deadhead_miles is None
+            assert changed.draft.facts.loaded_miles is None
+            assert post(client, 58, text=f'/edit {nonce(sent[-1])} deadhead 40') == 'processed'
+            assert 'miles to pickup: 40 [carrier]' in sent[-1]
+            assert len(calls) == 2
