@@ -109,7 +109,7 @@ class TomTomDeadhead:
         return Decimal(meters) / Decimal("1609.344")
 
 
-async def telegram_deadhead(conversation, user, chat, text, adapter, truck):
+async def telegram_route(conversation, user, chat, text, adapter, truck):
     """Offer, resolve and apply a route for the exact active draft."""
     inbox = conversation.inbox
     with inbox._lock:
@@ -118,16 +118,37 @@ async def telegram_deadhead(conversation, user, chat, text, adapter, truck):
         inbox._access(user, chat, flow["token"])
         snapshot = conversation.opening.get(user, chat)
         trip = snapshot.trip
-        if truck is None or not trip.approximate_truck_pin or not trip.pickup:
-            return ("A truck routing profile, shared pin and pickup street address are required. "
-                    "You can enter deadhead miles manually."), flow["nonce"]
-        if snapshot.draft.facts.deadhead_miles is not None:
-            return "This draft already has deadhead miles. Edit them directly if needed.", flow["nonce"]
         parts = text.split()
+        command = parts[0]
+        reposition = command == "/reposition"
+        leg = "reposition" if reposition else "deadhead"
+        field = f"{leg}_miles"
+        if reposition:
+            destination = trip.next_destination
+            if destination == "home":
+                destination = conversation.opening.get_profile(user, chat).home_base
+            if truck is None or not trip.delivery or not destination:
+                return ("A truck routing profile, delivery street address and next stop are required. "
+                        "For home, add a home base or enter reposition miles manually."), flow["nonce"]
+            current_miles = snapshot.pricing.reposition_miles
+        else:
+            if truck is None or not trip.approximate_truck_pin or not trip.pickup:
+                return ("A truck routing profile, shared pin and pickup street address are required. "
+                        "You can enter deadhead miles manually."), flow["nonce"]
+            current_miles = snapshot.draft.facts.deadhead_miles
+        if current_miles is not None:
+            return f"This draft already has {leg} miles. Edit them directly if needed.", flow["nonce"]
         if len(parts) == 1:
             nonce = token_urlsafe(12)
             flow["tomtom_generation"] = object()
-            flow["tomtom"] = (snapshot, flow["nonce"], nonce, ())
+            flow["tomtom"] = (snapshot, flow["nonce"], nonce, (), (), command)
+            if reposition:
+                return (
+                    f"Delivery: {trip.delivery}\nNext stop: {destination}\n"
+                    "TomTom receives these addresses for lookup. After you select both matches, "
+                    "TomTom receives their coordinates and truck dimensions and weight. "
+                    f"The result is a planning estimate. Reply {command} {nonce} search."
+                ), flow["nonce"]
             return (
                 "TomTom receives the pickup address for lookup. After you choose a match, "
                 "TomTom receives your approximate truck pin, the pickup coordinates and "
@@ -135,29 +156,42 @@ async def telegram_deadhead(conversation, user, chat, text, adapter, truck):
                 f"To send the pickup address, reply /deadhead {nonce} search."
             ), flow["nonce"]
         pending = flow.get("tomtom")
-        if (len(parts) != 3 or pending is None or pending[0] is not snapshot
-                or pending[1] != flow["nonce"] or pending[2] != parts[1]):
-            return "This route request expired. Send /deadhead to start again.", flow["nonce"]
-        candidates = pending[3]
-        searching = not candidates and parts[2] == "search"
-        if not searching and parts[2] not in {str(i) for i in range(1, len(candidates) + 1)}:
-            return "Use the search or pickup selection command shown in the route prompt.", flow["nonce"]
+        if (len(parts) < 3 or pending is None or pending[0] is not snapshot
+                or pending[1] != flow["nonce"] or pending[2] != parts[1] or pending[5] != command):
+            return f"This route request expired. Send {command} to start again.", flow["nonce"]
+        candidates, origins = pending[3:5]
+        searching = not candidates and parts[2:] == ["search"]
+        if not searching:
+            choices = (origins, candidates) if reposition else (candidates,)
+            if len(parts[2:]) != len(choices) or any(
+                choice not in {str(i) for i in range(1, len(options) + 1)}
+                for choice, options in zip(parts[2:], choices)
+            ):
+                return "Use the search or address selection command shown in the route prompt.", flow["nonce"]
         # Consume the request before releasing the lock. New edits can proceed during I/O.
         del flow["tomtom"]
         nonce = flow["nonce"]
         generation = flow["tomtom_generation"]
 
-    failure = "TomTom mileage is unavailable. Enter deadhead miles manually."
+    failure = f"TomTom mileage is unavailable. Enter {leg} miles manually."
     try:
         if searching:
-            candidates = await adapter.find_pickups(trip.pickup)
+            if reposition:
+                origins = await adapter.find_pickups(trip.delivery)
+                candidates = await adapter.find_pickups(destination) if origins else ()
+            else:
+                candidates = await adapter.find_pickups(trip.pickup)
         else:
-            pickup = candidates[int(parts[2]) - 1]
-            origin = RoutePoint(
-                latitude=trip.approximate_truck_pin[0], longitude=trip.approximate_truck_pin[1],
-            )
+            pickup = candidates[int(parts[-1]) - 1]
+            if reposition:
+                delivery = origins[int(parts[2]) - 1]
+                origin = delivery.point
+            else:
+                origin = RoutePoint(
+                    latitude=trip.approximate_truck_pin[0], longitude=trip.approximate_truck_pin[1],
+                )
             miles = await adapter.estimate_miles(origin, pickup, truck)
-    except TomTomUnavailable:
+    except (TomTomUnavailable, ValueError):
         failed = True
     else:
         failed = False
@@ -172,24 +206,38 @@ async def telegram_deadhead(conversation, user, chat, text, adapter, truck):
             return failure, nonce
         if searching:
             if not candidates:
-                return "No matching street address. Refine the pickup or enter deadhead miles manually.", nonce
+                return f"No matching street address. Refine the address or enter {leg} miles manually.", nonce
             selection = token_urlsafe(12)
-            flow["tomtom"] = (snapshot, nonce, selection, candidates)
+            flow["tomtom"] = (snapshot, nonce, selection, candidates, origins, command)
             options = "\n".join(f"{i}. {item.address}" for i, item in enumerate(candidates, 1))
+            if reposition:
+                delivery_options = "\n".join(
+                    f"{i}. {item.address}" for i, item in enumerate(origins, 1)
+                )
+                return (
+                    f"Confirm delivery:\n{delivery_options}\nConfirm next stop:\n{options}\n"
+                    f"Send {command} {selection} DELIVERY_NUMBER NEXT_STOP_NUMBER."
+                ), nonce
             return (
                 f"Confirm the pickup before routing:\n{options}\n"
                 f"Send /deadhead {selection} NUMBER to confirm your choice."
             ), nonce
         source = "TomTom estimate"
-        draft = snapshot.draft.model_copy(update={
-            "facts": snapshot.draft.facts.model_copy(update={"deadhead_miles": miles}),
-            "evidence": {**snapshot.draft.evidence, "deadhead_miles": source},
-        })
+        draft, pricing = snapshot.draft, snapshot.pricing
+        if reposition:
+            pricing = pricing.model_copy(update={field: miles})
+            route_label = f"Reposition route: {delivery.address} to {pickup.address}"
+        else:
+            draft = draft.model_copy(update={
+                "facts": draft.facts.model_copy(update={field: miles}),
+                "evidence": {**draft.evidence, field: source},
+            })
+            route_label = f"Pickup used for routing: {pickup.address}"
         updated = conversation.opening.put(
-            user, chat, draft, snapshot.pricing, expected_revision=snapshot.revision,
+            user, chat, draft, pricing, expected_revision=snapshot.revision,
             trip=trip,
             counter_offer=snapshot.counter_offer, counter_note=snapshot.counter_note,
-            sources={**snapshot.sources, "deadhead_miles": source},
+            sources={**snapshot.sources, field: source},
         )
-        return (f"Pickup used for routing: {pickup.address}\n"
+        return (route_label + "\n"
                 + conversation._review_trip(user, chat, carrier, flow, updated)), flow["nonce"]

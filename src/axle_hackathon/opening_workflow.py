@@ -192,7 +192,7 @@ def render_review(snapshot: OpeningSnapshot, profile: OpeningProfile | None = No
         if value is None:
             return 'unknown'
         source = snapshot.sources.get(name, 'carrier')
-        if name == 'deadhead_miles' and source.endswith('estimate'):
+        if name in ('deadhead_miles', 'reposition_miles') and source.endswith('estimate'):
             value = f'{value:.2f}'
         return f'{value} [{source}]'
     status = 'CONFIRMED' if snapshot.confirmed else 'UNCONFIRMED'
@@ -222,6 +222,11 @@ def render_review(snapshot: OpeningSnapshot, profile: OpeningProfile | None = No
         f'expected duration: {tagged("duration_note", trip.duration_note)}',
         f'availability: {tagged("availability", trip.availability if trip.availability != "unknown" else None)}',
         f'handling notes: {tagged("handling_note", trip.handling_note)}']
+    if trip.next_destination == 'home':
+        home = shown(profile.home_base if profile else None)
+        lines.append(f'Saved home base for this next stop: {home}. Review before confirming.')
+    if snapshot.sources.get('reposition_miles') == 'TomTom estimate' and not snapshot.confirmed:
+        lines.append('Review the estimated miles after delivery before confirming, or enter reposition miles manually.')
     if snapshot.sources.get('deadhead_miles') in ('offline route estimate', 'TomTom estimate') and not snapshot.confirmed:
         lines.append('Review the estimated miles to pickup before confirming, or replace them '
                      'by replying with deadhead followed by your mileage.')

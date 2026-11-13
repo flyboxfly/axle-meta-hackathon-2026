@@ -11,7 +11,7 @@ from contextlib import asynccontextmanager
 from fastapi import FastAPI, Request
 from fastapi.responses import JSONResponse
 
-from .opening_tomtom import telegram_deadhead
+from .opening_tomtom import telegram_route
 from .opening_profile_store import OpeningProfileStore
 from .opening_intake import IntakeFacts, ScreenshotDraft, parse_media_update
 from .opening_workflow import (OpeningPricing, OpeningProfile, OpeningTrip,
@@ -960,7 +960,7 @@ def create_opening_app(inbox, *, webhook_secret: str, allowed_host: str, convers
                         pass
                     else:
                         return reply(200, 'queued' if accepted else 'duplicate')
-            route_command = isinstance(text, str) and text.split(maxsplit=1)[:1] == ['/deadhead']
+            route_command = isinstance(text, str) and text.split(maxsplit=1)[0:1] in (['/deadhead'], ['/reposition'])
             if route_command and (deadhead_adapter is None or conversation is None):
                 return reply(400, 'unsupported_command')
             if conversation is not None and (route_command or pin is not None or (isinstance(text, str) and (
@@ -983,7 +983,7 @@ def create_opening_app(inbox, *, webhook_secret: str, allowed_host: str, convers
                         if route_command:
                             carrier = inbox._carrier(user, chat)
                             truck = (deadhead_trucks or {}).get(carrier)
-                            answer = await telegram_deadhead(
+                            answer = await telegram_route(
                                 conversation, user, chat, text, deadhead_adapter, truck,
                             )
                             if answer is not None:
