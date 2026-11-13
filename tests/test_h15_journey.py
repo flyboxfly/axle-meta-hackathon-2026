@@ -538,3 +538,30 @@ def test_est_mileage_candidate_structure_and_bot_adoption_hint(store):
     review = conversation.handle(1, 1, 'skip')
     assert 'loaded 480' in review
     assert store._opening.get(1, 1).draft.facts.loaded_miles is None
+
+
+def test_broker_offer_preserves_original_and_requires_new_confirmation(store):
+    conversation = journey(store, 'availability feasible; reposition 20')
+    conversation.handle(1, 1, 'target 2.00; cpm 1.25')
+    flow = store._conversation_states['owner']
+    conversation.handle(1, 1, f"/confirm {flow['nonce']}")
+    original = store._opening.get(1, 1)
+    assert store._opening.evaluate(1, 1, original.revision)['decision'] == 'NEGOTIATE'
+
+    review = conversation.handle(1, 1, 'broker offer 500')
+    revised = store._opening.get(1, 1)
+    assert not revised.confirmed
+    assert revised.draft.facts == original.draft.facts
+    assert revised.pricing == original.pricing
+    assert 'evaluated compensation: 500 [revised broker offer]' in review
+    with pytest.raises(ValueError):
+        store._opening.evaluate(1, 1, revised.revision)
+
+    conversation.handle(1, 1, f"/confirm {flow['nonce']}")
+    result = store._opening.evaluate(1, 1, revised.revision)
+    assert result['decision'] == 'ACCEPT'
+    assert result['compensation_source'] == 'revised broker offer'
+    assert result['total_miles'] == '240'
+
+    conversation.handle(1, 1, 'counter 525')
+    assert effective_compensation(store._opening.get(1, 1))[1] == 'owner counteroffer'

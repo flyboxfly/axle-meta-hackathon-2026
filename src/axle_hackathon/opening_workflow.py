@@ -81,9 +81,11 @@ class OpeningSnapshot:
 
 
 def effective_compensation(snapshot: OpeningSnapshot) -> tuple[Decimal | None, str]:
-    """Owner counteroffer wins over posted payout; both require confirmation."""
+    """A revised amount takes precedence over the original posted payout."""
     if snapshot.counter_offer is not None:
-        return snapshot.counter_offer, 'owner counteroffer'
+        source = ('revised broker offer' if snapshot.sources.get('counter_offer') == 'broker'
+                  else 'owner counteroffer')
+        return snapshot.counter_offer, source
     if snapshot.draft.facts.payout is not None:
         return snapshot.draft.facts.payout, 'posted offer'
     return None, 'unknown'
@@ -312,8 +314,9 @@ class OpeningSessions:
                 raise ValueError('Bounded numeric counteroffer required')
             if sources is not None and (not isinstance(sources, dict)
                                         or len(sources) > 24 or any(
-                                            not isinstance(k, str) or v not in (
+                                            not isinstance(k, str) or (v not in (
                                                 'screenshot', 'profile', 'carrier', 'offline route estimate', 'TomTom estimate')
+                                            and (k, v) != ('counter_offer', 'broker'))
                                             for k, v in sources.items())):
                 raise ValueError('Valid source labels required')
             previous = self._sessions.get(carrier)
