@@ -9,10 +9,10 @@ from threading import Lock
 from time import monotonic
 
 from .opening_intake import (
-    REAL_INSTRUCTION_VERSION, WONDER_MODEL, build_extraction_request,
+    REAL_INSTRUCTION_VERSION, TRIP_SCREENSHOT_FIELDS, WONDER_MODEL, build_extraction_request,
     normalize_screenshot, parse_extraction_response,
 )
-from .opening_workflow import OpeningPricing, pricing_blockers
+from .opening_workflow import OpeningPricing, OpeningTrip, pricing_blockers
 from .pilot_execution import ExtractionResponseError
 
 PRICING_INSTRUCTION_VERSION = 'opening-pricing-v1'
@@ -115,7 +115,10 @@ class OpeningDelegator:
                 if getattr(pricing, name) is not None}
             sources.update(dict.fromkeys(('payout', 'loaded_miles', 'deadhead_miles', 'weight_lbs'),
                                          'screenshot'))
-            snapshot = self._sessions.put(user, chat, draft, pricing,
+            trip = {name: getattr(draft.facts, name) for name in TRIP_SCREENSHOT_FIELDS
+                    if getattr(draft.facts, name)}
+            sources.update(dict.fromkeys(trip, "screenshot"))
+            snapshot = self._sessions.put(user, chat, draft, pricing, trip=OpeningTrip(**trip),
                                           expected_revision=expected_revision, sources=sources)
             return dict(snapshot=snapshot,
                 trace=_metadata(response, started, role='intake',
@@ -137,7 +140,7 @@ class OpeningDelegator:
                 raise ValueError('Missing pricing inputs: ' + ', '.join(blockers))
             # No identity, consent tokens or session profile are transmitted.
             payload = json.dumps(dict(revision=revision,
-                facts=snapshot.draft.facts.model_dump(mode='json'),
+                facts=snapshot.draft.facts.model_dump(mode='json', exclude=set(TRIP_SCREENSHOT_FIELDS)),
                 pricing=snapshot.pricing.model_dump(mode='json'),
                 trip=snapshot.trip.model_dump(mode='json',
                     include={'availability', 'duration_note', 'handling_note'}),

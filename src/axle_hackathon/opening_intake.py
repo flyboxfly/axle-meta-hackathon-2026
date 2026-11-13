@@ -19,7 +19,7 @@ from .pilot_execution import ExtractionResponseError
 from .vision import MAX_IMAGE_BYTES, normalize_image
 
 WONDER_MODEL = 'muse-wonder-1.0'
-REAL_INSTRUCTION_VERSION = 'opening-intake-v3'
+REAL_INSTRUCTION_VERSION = 'opening-intake-v4'
 MAX_ISSUES = 6
 MAX_ISSUE_CHARS = 240
 MAX_EVIDENCE_CHARS = 200
@@ -29,7 +29,7 @@ Use at most {MAX_ISSUES} issue notes, each at most {MAX_ISSUE_CHARS} characters.
 Copy only clearly visible facts with short exact supporting text. Missing, illegible, conflicting or ambiguous values must be null; explain briefly in issues. Never infer equipment from a logo or generic truck icon.
 Payout is complete confirmed compensation only when explicitly labeled total/all-in. An opening bid, base price, fuel surcharge or accessorials alone never prove a total; never sum, double count or convert a bid into a payout.
 Loaded miles must be explicitly distinguished from deadhead/total miles. Do not derive miles from displayed RPM or locations. If mileage is labeled estimated (for example 'Est. mileage'), record the miles as null and quote the exact wording in issues; never adopt an estimate as confirmed miles. Never infer deadhead, current location, availability, schedule, costs or any carrier pricing target.
-A displayed zero weight is a placeholder requiring clarification, not a fact. Do not extract carrier names, IDs, addresses, personal details or credentials. Do not claim native Meta/Muse integration.'''
+A displayed zero weight is a placeholder requiring clarification, not a fact. Extract pickup and delivery as city, region and postal code only. In handling_note capture visible pallet count, pickup and delivery appointment windows (no inferred year), and explicit handling or check-in requirements. Keep these distinct from carrier availability and duration. Do not extract carrier names, IDs, street addresses, personal details or credentials. Do not claim native Meta/Muse integration.'''
 
 TELEGRAM_HOSTS = frozenset({'api.telegram.org'})
 MAX_IMAGE_REQUEST_BYTES = 8 * 1024 * 1024
@@ -38,7 +38,10 @@ MAX_RESPONSE_CHARS = 12000
 
 _TOKEN_RE = re.compile(r'[0-9]{1,20}:[A-Za-z0-9_-]{20,200}')
 _FILE_PATH_RE = re.compile(r'[A-Za-z0-9][A-Za-z0-9_/.-]{0,1022}[A-Za-z0-9]')
-FactName = Literal['payout', 'loaded_miles', 'deadhead_miles', 'weight_lbs']
+FactName = Literal['payout', 'loaded_miles', 'deadhead_miles', 'weight_lbs', 'pickup', 'delivery', 'handling_note']
+
+
+TRIP_SCREENSHOT_FIELDS = {"pickup": 64, "delivery": 64, "handling_note": 200}
 
 
 class IntakeFacts(Frozen):
@@ -48,10 +51,15 @@ class IntakeFacts(Frozen):
     weight_lbs: Decimal | None = Field(default=None, ge=0, le=200000)
 
 
+    pickup: str | None = Field(default=None, max_length=64)
+    delivery: str | None = Field(default=None, max_length=64)
+    handling_note: str | None = Field(default=None, max_length=200)
+
+
 class ScreenshotDraft(Frozen):
     status: Literal['UNCONFIRMED'] = 'UNCONFIRMED'
     facts: IntakeFacts
-    evidence: dict[FactName, str] = Field(default_factory=dict, max_length=4)
+    evidence: dict[FactName, str] = Field(default_factory=dict, max_length=len(IntakeFacts.model_fields))
     issues: list[str] = Field(default_factory=list, max_length=MAX_ISSUES)
 
     @classmethod
@@ -205,7 +213,9 @@ def extraction_schema() -> dict:
                 'required': list(properties), 'additionalProperties': False}
     return closed({
         'status': {'type': 'string', 'enum': ['UNCONFIRMED']},
-        'facts': closed({name: {'type': ['number', 'null']} for name in names}),
+        'facts': closed({name: ({'type': ['string', 'null'], 'maxLength': TRIP_SCREENSHOT_FIELDS[name]}
+                                if name in TRIP_SCREENSHOT_FIELDS else {'type': ['number', 'null']})
+                         for name in names}),
         'evidence': closed({name: {'type': 'string', 'maxLength': MAX_EVIDENCE_CHARS}
                             for name in names}),
         'issues': {'type': 'array', 'maxItems': MAX_ISSUES,
