@@ -186,3 +186,46 @@ def test_tomtom_requires_opt_in_and_cannot_overwrite_manual_miles(store, telegra
             assert post(client, 58, text=f'/edit {nonce(sent[-1])} deadhead 40') == 'processed'
             assert 'miles to pickup: 40 [carrier]' in sent[-1]
             assert len(calls) == 2
+
+
+@pytest.mark.parametrize("endpoint", ["delivery", "next destination"])
+def test_tomtom_reposition_to_home_requires_both_matches(store, telegram, endpoint):
+    from axle_hackathon.opening_tomtom import DeadheadTruck, PickupCandidate, RoutePoint
+
+    conversation = journey(store, 'delivery 20 Fictional Dock; next destination home')
+    profile = conversation.opening.get_profile(1, 1)
+    conversation.opening.set_profile(1, 1, profile.model_copy(
+        update={"home_base": "30 Fictional Yard"}))
+    lookups, routes = [], []
+
+    class Routing:
+        async def find_pickups(self, address):
+            lookups.append(address)
+            return (PickupCandidate(address=address, point=RoutePoint(
+                latitude=40 + len(lookups), longitude=-74)),)
+
+        async def estimate_miles(self, origin, destination, truck):
+            routes.append((origin.latitude, destination.point.latitude))
+            return Decimal("15.234")
+
+    truck = DeadheadTruck(height_m="3.8", width_m="2.6", length_m="10.2", weight_kg=7500)
+    with telegram(conversation, deadhead_adapter=Routing(),
+                  deadhead_trucks={store._carrier(1, 1): truck}) as (client, sent, _):
+        assert post(client, 51, text="/reposition") == "processed"
+        assert "Next stop: 30 Fictional Yard" in sent[-1]
+        assert not lookups
+        search = re.search(r"(/reposition \S+ search)", sent[-1])[1]
+        assert post(client, 52, text=search) == "processed"
+        assert lookups == ["20 Fictional Dock", "30 Fictional Yard"]
+        assert not routes
+        select = re.search(r"(/reposition \S+) DELIVERY_NUMBER", sent[-1])[1]
+        assert post(client, 53, text=select + " 1 1") == "processed"
+        assert routes == [(41, 42)]
+        assert "miles after delivery: 15.23 [TomTom estimate]" in sent[-1]
+        snapshot = conversation.opening.get(1, 1)
+        assert snapshot.pricing.reposition_miles == Decimal("15.234")
+        assert not snapshot.confirmed
+        assert post(client, 54, text=f"/edit {nonce(sent[-1])} {endpoint} New Fictional Site") == "processed"
+        assert "miles after delivery: unknown" in sent[-1]
+        assert post(client, 55, text=f"/edit {nonce(sent[-1])} reposition 0") == "processed"
+        assert "miles after delivery: 0 [carrier]" in sent[-1]
