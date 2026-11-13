@@ -30,7 +30,7 @@ def evaluate_offer(data: OfferInputs) -> dict:
     """ACCEPT, NEGOTIATE, DECLINE or NEED_MORE_INFORMATION with checkable figures."""
     if data.revision < 1:
         raise ValueError('Positive revision required')
-    if data.compensation_source not in ('posted offer', 'owner counteroffer'):
+    if data.compensation_source not in ('posted offer', 'owner counteroffer', 'revised broker offer'):
         raise ValueError('Explicit compensation source required')
     if data.compensation < 0 or data.compensation > 1000000:
         raise ValueError('Bounded compensation required')
@@ -94,7 +94,7 @@ def evaluate_offer(data: OfferInputs) -> dict:
             or data.target_total_payout is not None) else 'carrier_unknown',
         pricing_source=data.pricing_source,
         assumptions=[
-            'Compensation is the confirmed posted offer or owner counteroffer; nothing is added.',
+            'Compensation is the confirmed posted offer, revised broker offer, or owner counteroffer; nothing is added.',
             'Operating cost is total confirmed miles times all-operating-expense CPM, counted once.',
             'Mileage, availability and schedule feasibility are carrier-supplied, not verified.',
             'Stops, hours-of-service, routing and market conditions are not modeled.',

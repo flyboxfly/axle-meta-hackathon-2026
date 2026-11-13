@@ -97,6 +97,7 @@ FIELD_LABELS = {
     'handling_note': ('handling', 'handling notes', 'service', 'service needs'),
     'equipment': ('equipment', 'truck', 'vehicle'),
     'operating_context': ('context', 'operating context', 'about'),
+    'broker_offer': ('broker offer', 'revised broker offer'),
     'counter': ('counter', 'counteroffer', 'counter offer'),
     'usdot': ('dot', 'usdot', 'usdot number'),
     'mc': ('mc', 'mc number'),
@@ -533,6 +534,8 @@ def apply_pairs_to_snapshot(opening, user, chat, snapshot, pairs, *, truck_pin=N
             raise ValueError(f'Unexpected field {name!r}'[:80])
         if not isinstance(raw, str) or not raw.strip() or len(raw) > 600:
             raise ValueError(f'Invalid {name}')
+    if {'broker_offer', 'counter'} <= pairs.keys():
+        raise ValueError('Enter one revised offer at a time')
     facts = snapshot.draft.facts.model_dump()
     pricing = snapshot.pricing.model_dump()
     trip = snapshot.trip.model_dump()
@@ -557,11 +560,19 @@ def apply_pairs_to_snapshot(opening, user, chat, snapshot, pairs, *, truck_pin=N
         if name in ('equipment', 'operating_context'):
             continue
         parsed = _unknown(raw)
+        if name == 'broker_offer':
+            offer = None if parsed is None else _decimal(
+                _number(parsed, name=name), name=name,
+                low=Decimal(0), high=Decimal(1000000), allow_zero=True)
+            note = None
+            sources['counter_offer'] = 'broker'
+            continue
         if name == 'counter':
             stripped = raw.strip()
             if stripped.lower() in ('none', 'unknown'):
                 offer, note = None, None
             elif re.match(r'^[\d$.,\s-]', stripped):
+                sources['counter_offer'] = 'carrier'
                 offer = _decimal(_number(stripped, name=name), name=name,
                                  low=Decimal(0), high=Decimal(1000000), allow_zero=True)
             else:
@@ -635,7 +646,8 @@ def apply_pairs_to_snapshot(opening, user, chat, snapshot, pairs, *, truck_pin=N
             sources.pop('target_total_payout', None)
         elif name == 'target_total_payout':
             sources.pop('target_all_mile_rpm', None)
-        sources[name if name != 'counter' else 'counter_offer'] = 'carrier'
+        if name != 'counter':
+            sources[name] = 'carrier'
     if truck_pin is not None:
         trip['truck_position'] = None
         trip['approximate_truck_pin'] = truck_pin

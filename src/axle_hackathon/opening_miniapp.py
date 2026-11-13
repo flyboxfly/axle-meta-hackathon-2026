@@ -45,7 +45,7 @@ from fastapi.responses import HTMLResponse, JSONResponse
 
 from .opening_telegram import (FIELD_LABELS, apply_pairs_to_snapshot,
                                negotiation_guidance, validate_profile_pairs)
-from .opening_workflow import (mileage_candidates, missing_input_labels,
+from .opening_workflow import (effective_compensation, mileage_candidates, missing_input_labels,
                                pricing_blockers, propose_mileage)
 from .remote_app import _is_valid_hostname
 
@@ -288,12 +288,8 @@ def review_payload(snapshot, profile):
             snapshot.counter_offer, sources.get('counter_offer', 'carrier'))
     else:
         review['counter_offer'] = {'value': None, 'state': 'unknown', 'source': 'unknown'}
-    compensation = (snapshot.counter_offer if snapshot.counter_offer is not None
-                    else facts.payout)
-    review['evaluated_compensation'] = _number_field(
-        compensation,
-        'owner counteroffer' if snapshot.counter_offer is not None
-        else ('posted offer' if facts.payout is not None else 'unknown'))
+    compensation, source = effective_compensation(snapshot)
+    review['evaluated_compensation'] = _number_field(compensation, source)
     return review
 
 
