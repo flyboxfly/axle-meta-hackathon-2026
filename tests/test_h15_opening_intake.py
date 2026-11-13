@@ -284,3 +284,16 @@ def test_invalid_extraction_responses_fail_closed(bad):
 def test_media_request_carries_future_dedup_ids():
     result = parse_media_update(photo_update(), BINDINGS, consented=True)
     assert (result.update_id, result.message_id, result.file_unique_id) == (50, 7, 'u-large')
+
+
+def test_trip_screenshot_facts_require_evidence():
+    draft = intake.ScreenshotDraft.validated_text(json.dumps({
+        'facts': {'pickup': 'Yorkana, PA 17406', 'delivery': 'Clifton, NJ 07011',
+                  'handling_note': '12 pallets'},
+        'evidence': {'pickup': 'Yorkana, PA, 17406', 'handling_note': '12 Pallets'},
+    }))
+    assert draft.facts.pickup == 'Yorkana, PA 17406'
+    assert draft.facts.delivery is None
+    assert draft.facts.handling_note == '12 pallets'
+    assert draft.facts.payout is None
+    assert draft.facts.loaded_miles is None
