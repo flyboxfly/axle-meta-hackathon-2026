@@ -191,7 +191,10 @@ def render_review(snapshot: OpeningSnapshot, profile: OpeningProfile | None = No
     def tagged(name, value):
         if value is None:
             return 'unknown'
-        return f'{value} [{snapshot.sources.get(name, "carrier")}]'
+        source = snapshot.sources.get(name, 'carrier')
+        if name == 'deadhead_miles' and source.endswith('estimate'):
+            value = f'{value:.2f}'
+        return f'{value} [{source}]'
     status = 'CONFIRMED' if snapshot.confirmed else 'UNCONFIRMED'
     lines = [f'OPENING DRAFT revision {snapshot.revision} — {status}',
         'From your screenshot (check every value):',

@@ -14,7 +14,8 @@ from fastapi.responses import JSONResponse
 from .opening_profile_store import OpeningProfileStore
 from .opening_intake import IntakeFacts, ScreenshotDraft, parse_media_update
 from .opening_workflow import (OpeningPricing, OpeningProfile, OpeningTrip,
-                               display_expense_claim, render_review)
+                               display_expense_claim, missing_input_labels, pricing_blockers,
+                               render_review)
 from .pilot_delivery import DeliveryPool
 from .pilot_execution import failure_category_for
 from .pilot_memory import _token_matches
@@ -921,11 +922,20 @@ def create_opening_app(inbox, *, webhook_secret: str, allowed_host: str, convers
                 finally:
                     flow_slots.release()
             if text == '/price':
+                price_rejection = 'Confirm the current draft before requesting pricing.'
                 if conversation is None or conversation.inbox is not inbox:
                     return reply(503, 'unavailable')
                 with inbox._lock:
                     try:
                         carrier = inbox._carrier(user, chat)
+                        # A rejected /price is recorded as a flow reply. Its replay
+                        # remains a duplicate even after the draft is confirmed.
+                        recorded = inbox._db.execute(
+                            'SELECT action FROM pilot_updates WHERE carrier=? AND update_id=?',
+                            (carrier, data['update_id'])).fetchone()
+                        action = recorded[0] if recorded and recorded[0] == 'flow' else 'opening'
+                        if inbox.duplicate_update(user, chat, data['update_id'], action):
+                            return reply(200, 'duplicate')
                         flow = inbox._conversation_states.get(carrier)
                         if flow is None or flow['step'] != 'confirmed':
                             raise ValueError('Confirm the current revision first')
@@ -934,17 +944,22 @@ def create_opening_app(inbox, *, webhook_secret: str, allowed_host: str, convers
                         snapshot = conversation.opening.get(user, chat)
                         if snapshot.revision != flow['revision'] or not snapshot.confirmed:
                             raise ValueError('Confirm the current revision first')
-                        if inbox.duplicate_update(user, chat, data['update_id'], 'opening'):
-                            return reply(200, 'duplicate')
                         if inbox.stale_message(user, chat, message_id):
                             return reply(200, 'stale')
+                        blockers = pricing_blockers(snapshot)
+                        if blockers:
+                            price_rejection = ('Complete the missing pricing inputs: '
+                                + ', '.join(missing_input_labels(blockers)) + '.')
+                            raise ValueError('Missing pricing inputs')
                         accepted = inbox.submit(user, chat, data['update_id'], 'opening',
                             token=token, revision=snapshot.revision, message_id=message_id)
                     except (ValueError, KeyError):
-                        return reply(400, 'invalid_update')
-                return reply(200, 'queued' if accepted else 'duplicate')
+                        # Expected command rejections use the deduplicated reply path below.
+                        pass
+                    else:
+                        return reply(200, 'queued' if accepted else 'duplicate')
             if conversation is not None and (pin is not None or (isinstance(text, str) and (
-                    text.split(' ', 1)[0] in ('/start', '/reply', '/confirm', '/save_profile', '/edit', '/refresh', '/profile')
+                    text.split(' ', 1)[0] in ('/start', '/reply', '/confirm', '/save_profile', '/edit', '/refresh', '/profile', '/price')
                     or not text.startswith('/')))):
                 if send is None or conversation.inbox is not inbox:
                     return reply(503, 'unavailable')
@@ -960,8 +975,11 @@ def create_opening_app(inbox, *, webhook_secret: str, allowed_host: str, convers
                         if claim is None:
                             return reply(200, 'duplicate')
                         try:
-                            answer = (conversation.share_truck_pin(user, chat, pin) if pin is not None
-                                      else conversation.handle(user, chat, text))
+                            if text == '/price':
+                                answer = price_rejection + '\n' + conversation.handle(user, chat, '/refresh')
+                            else:
+                                answer = (conversation.share_truck_pin(user, chat, pin) if pin is not None
+                                          else conversation.handle(user, chat, text))
                         except (ValueError, KeyError, TypeError, PermissionError):
                             try:
                                 answer = 'Please check your answer. No new confirmation was granted.\n' + conversation.handle(user, chat, '/refresh')

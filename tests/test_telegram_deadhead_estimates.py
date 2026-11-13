@@ -63,23 +63,23 @@ def test_deadhead_estimate_requires_confirmation_and_follows_endpoints(store, te
         assert not calls
         assert post(client, 52, text='pickup Fictional Dock; loaded 180') == 'processed'
         assert calls == [((10.12, 20.65), 'Fictional Dock')]
-        assert 'miles to pickup: 12.5 [offline route estimate]' in sent[-1]
+        assert 'miles to pickup: 12.50 [offline route estimate]' in sent[-1]
         assert '10.12' not in sent[-1] and '20.65' not in sent[-1]
-        assert post(client, 53, text='/price') == 'invalid_update'
+        assert post(client, 53, text='/price') == 'processed'
         assert post(client, 54, text=f'/confirm {nonce(sent[-1])}') == 'processed'
         assert post(client, 55, text='/price') == 'queued'
         assert worker.tick() == 'completed'
         assert 'Total miles: 212.5' in sent[-1]
 
         assert post(client, 56, location={'latitude': 11.234, 'longitude': 21.234}) == 'processed'
-        assert 'miles to pickup: 18 [offline route estimate]' in sent[-1]
+        assert 'miles to pickup: 18.00 [offline route estimate]' in sent[-1]
         old_nonce = nonce(sent[-1])
         assert post(client, 57, text=f'/confirm {old_nonce}') == 'processed'
         assert post(client, 58, text='pickup Unmapped Dock') == 'processed'
         assert 'miles to pickup: unknown' in sent[-1]
         assert 'Add missing mileage with these labels: deadhead' in sent[-1]
         assert post(client, 59, text=f'/confirm {old_nonce}') == 'processed'
-        assert post(client, 60, text='/price') == 'invalid_update'
+        assert post(client, 60, text='/price') == 'processed'
 
         assert post(client, 61, text='pickup Fictional Dock; loaded 180; deadhead 15') == 'processed'
         assert len(calls) == 3

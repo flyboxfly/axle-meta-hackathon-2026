@@ -112,9 +112,10 @@ def test_two_opportunities_with_fresh_trip_and_exact_revision(store):
         assert changed.draft.facts == second.draft.facts.model_copy(update={'deadhead_miles': 30})
         assert post(16, text=f'/confirm {review_nonce}') == 'processed'
         assert not store._opening.get(1, 1).confirmed
-        assert post(17, text='/price') == 'invalid_update'
+        assert post(17, text='/price') == 'processed'
         assert post(18, text=f'/confirm {nonce()}') == 'processed'
-        assert post(19, text='/price') == 'invalid_update'
+        assert post(19, text='/price') == 'processed'
+        assert 'Complete the missing pricing inputs: miles after delivery.' in sent[-1]
         assert len(calls) == 2
         assert post(20, text='reposition 0') == 'processed'
         assert 'miles after delivery: 0 [carrier]' in sent[-1]
