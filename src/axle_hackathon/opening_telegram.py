@@ -1230,7 +1230,7 @@ def run_screenshot(inbox, delegator, send, *, user: int, chat: int, update_id: i
                 inbox._access(user, chat, token)
 
         try:
-            pool.send(chat, 'I’m reading your load screenshot.', acknowledgement_guard, send)
+            pool.send(chat, '🫡', acknowledgement_guard, send)
         except Exception:
             pass  # The result has its own guarded delivery attempt.
     stage = 'attempt'
@@ -1315,7 +1315,7 @@ def run_screenshot(inbox, delegator, send, *, user: int, chat: int, update_id: i
                 pass  # A notification has one bounded attempt; retain the extraction cause.
         try:
             inbox.finish(user, chat, update_id, claim, success=False,
-                         category=category)
+                         category=category, extraction_error=exc)
         except Exception:
             pass
         try:

@@ -32,6 +32,24 @@ class ExtractionResponseError(RuntimeError):
         self.failure_category = category
 
 
+def extraction_failure_details(exc):
+    """Return only bounded metadata for the operator's local ledger."""
+    import re
+
+    stage = getattr(exc, 'extraction_stage', None)
+    if stage not in {'media', 'provider_request', 'provider_response',
+                     'extraction_validation', 'worker_timeout', 'delivery'}:
+        return None
+    status = getattr(exc, 'provider_status', None)
+    request_id = getattr(exc, 'provider_request_id', None)
+    return (
+        stage,
+        status if type(status) is int and 100 <= status <= 599 else None,
+        request_id if isinstance(request_id, str)
+        and re.fullmatch(r'[A-Za-z0-9][A-Za-z0-9_-]{0,127}', request_id) else None,
+    )
+
+
 def failure_category_for(exc, *, stage=None):
     """Map one internal failure to a fixed category. No payload is retained."""
     if stage == 'delivery':
@@ -104,10 +122,14 @@ class BoundedDelegator:
                 timed_out.set()
             error = RuntimeError('Provider outcome uncertain; no automatic retry')
             error.failure_category = 'provider_timeout'
+            error.extraction_stage = 'worker_timeout'
             raise error from None
         except Exception as exc:
             error = RuntimeError('Provider outcome uncertain; no automatic retry')
             error.failure_category = failure_category_for(exc)
+            details = extraction_failure_details(exc)
+            if details is not None:
+                error.extraction_stage, error.provider_status, error.provider_request_id = details
             raise error from None
 
     @property

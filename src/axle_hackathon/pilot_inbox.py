@@ -7,7 +7,7 @@ from hashlib import sha256
 from secrets import token_urlsafe
 
 from .opening_workflow import pricing_blockers
-from .pilot_execution import FAILURE_CATEGORIES
+from .pilot_execution import FAILURE_CATEGORIES, extraction_failure_details
 from .pilot_memory import PilotMemory
 
 
@@ -91,6 +91,9 @@ class PilotInbox(PilotMemory):
             self._db.execute('''CREATE TABLE IF NOT EXISTS pilot_media (
                 update_id INTEGER PRIMARY KEY, carrier TEXT NOT NULL, file_id TEXT NOT NULL,
                 file_unique_id TEXT NOT NULL, mime TEXT NOT NULL, reported_size INTEGER)''')
+            self._db.execute('''CREATE TABLE IF NOT EXISTS pilot_extraction_failures (
+                update_id INTEGER PRIMARY KEY, stage TEXT NOT NULL,
+                http_status INTEGER, request_id TEXT)''')
             # An interrupted paid request has an unknown outcome. Never replay it.
             self._db.execute("INSERT OR IGNORE INTO pilot_failure_categories "
                              "SELECT update_id,'unknown' FROM pilot_updates "
@@ -281,11 +284,11 @@ class PilotInbox(PilotMemory):
                     "AND carrier=? AND claim=? AND status='processing'",(update_id,carrier,claim)).rowcount
                 if count != 1:raise ValueError('Stale delivery attempt')
 
-    def finish(self, user, chat, update_id, claim, *, success: bool, category=None):
+    def finish(self, user, chat, update_id, claim, *, success: bool, category=None, extraction_error=None):
         """Record outcome only. No delivery or authorization follows from this status.
 
-        On failure only a sanitized category from FAILURE_CATEGORIES is kept;
-        exception text, payloads and provider detail are never persisted.
+        Failures retain a sanitized category and optional extraction metadata.
+        Exception text and payloads are never persisted.
         """
         with self._lock:
             carrier = self._carrier(user, chat)
@@ -302,6 +305,11 @@ class PilotInbox(PilotMemory):
                     self._db.execute(
                         'INSERT OR REPLACE INTO pilot_failure_categories '
                         'VALUES (?,?)', (update_id, kept))
+                    details = extraction_failure_details(extraction_error)
+                    if details is not None:
+                        self._db.execute(
+                            'INSERT INTO pilot_extraction_failures VALUES (?,?,?,?)',
+                            (update_id, *details))
                 if count != 1:
                     raise ValueError('Stale task completion')
 

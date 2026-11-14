@@ -96,7 +96,9 @@ class OpeningDelegator:
             except Exception:
                 if admit is None:
                     raise
-                raise RuntimeError('Media could not be read') from None
+                error = ExtractionResponseError('media_error', 'Media could not be read')
+                error.extraction_stage = 'media'
+                raise error from None
             payload = build_extraction_request(normalized, mime)
             if retry:
                 payload['input'][0]['content'][0]['text'] += (
@@ -112,11 +114,17 @@ class OpeningDelegator:
             except ExtractionResponseError:
                 raise
             except Exception:
-                raise RuntimeError('Model extraction failed; no automatic retry') from None
-            draft = parse_extraction_response(response)
-            if admit is not None and not any(
-                    value is not None for value in draft.facts.model_dump().values()):
-                raise ExtractionResponseError('extraction_empty', 'No readable trip facts')
+                error = ExtractionResponseError('provider_error', 'Model extraction failed')
+                error.extraction_stage = 'provider_request'
+                raise error from None
+            try:
+                draft = parse_extraction_response(response)
+                if admit is not None and not any(
+                        value is not None for value in draft.facts.model_dump().values()):
+                    raise ExtractionResponseError('extraction_empty', 'No readable trip facts')
+            except ExtractionResponseError as exc:
+                exc.extraction_stage = 'extraction_validation'
+                raise
             # A new opportunity starts with truck defaults and fresh trip facts.
             try:
                 profile = self._sessions.get_profile(user, chat)

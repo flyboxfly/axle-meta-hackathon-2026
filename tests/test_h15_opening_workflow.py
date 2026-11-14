@@ -1219,7 +1219,7 @@ def test_warp_one_upload_three_attempts_and_local_price(store, third_succeeds):
         assert post(6, photo=photo) == 'ignored'
         assert worker.tick() == ('completed' if third_succeeds else 'uncertain')
         assert len(calls) == 3 and len(set(calls)) == 1
-        assert sends[-2] == 'I’m reading your load screenshot.'
+        assert sends[-2] == '🫡'
         assert 'attempt' not in sends[-1].lower()
         if third_succeeds:
             assert 'UNCONFIRMED screenshot draft' in sends[-1]
@@ -1333,3 +1333,30 @@ def test_warp_timed_out_extraction_cannot_publish_late_draft(store):
         assert bounded._executor.drained.wait(5)
     with pytest.raises(KeyError):
         store._opening.get(1, 1)
+
+
+def test_extraction_ledger_retains_http_metadata_without_provider_body(store):
+    from axle_hackathon.pilot_execution import BoundedDelegator
+
+    access = session(store)
+    def model(request):
+        return httpx.Response(401, headers={'x-request-id': 'req-offline-1'},
+                              content=b'private response body')
+
+    with httpx.Client(transport=httpx.MockTransport(stage_handler([], model=model))) as client:
+        inner = OpeningDelegator(store, store._opening,
+            MetaImageClient(client, 'invented-key', seconds=5), None,
+            media=TelegramMedia(client, TOKEN, seconds=5))
+        bounded = BoundedDelegator(inner, timeout=5)
+        try:
+            worker = OpeningWorker(store, bounded, lambda *_: True,
+                                   global_limit=3, carrier_limit=3, warp=True)
+            assert submit_jpeg(store, access.token)
+            assert worker.tick() == 'uncertain'
+            assert store._db.execute(
+                'SELECT stage, http_status, request_id FROM pilot_extraction_failures'
+            ).fetchall() == [('provider_response', 401, 'req-offline-1')]
+            assert store._db.execute('SELECT SUM(attempts) FROM pilot_budget').fetchone() == (1,)
+            assert 'private response body' not in '\n'.join(store._db.iterdump())
+        finally:
+            bounded.close()
