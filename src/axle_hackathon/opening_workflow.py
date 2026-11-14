@@ -199,7 +199,7 @@ def render_review(snapshot: OpeningSnapshot, profile: OpeningProfile | None = No
         return f'{value} [{source}]'
     status = 'CONFIRMED' if snapshot.confirmed else 'UNCONFIRMED'
     lines = [f'OPENING DRAFT revision {snapshot.revision} — {status}',
-        'From your screenshot (check every value):',
+        'Offer and cargo details (check every value):',
         f'posted pay: {tagged("payout", facts.payout)}',
         f'weight lbs: {tagged("weight_lbs", facts.weight_lbs)}',
         'Your pricing inputs (rates use all trip miles below):',
