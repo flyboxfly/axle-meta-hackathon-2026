@@ -167,4 +167,32 @@ def main_real():
     return 0
 
 
-if __name__=='__main__':raise SystemExit(main())
+def main_warp():
+    configure_private_logging()
+    os.umask(0o077)
+    try:
+        config = Path(os.environ.get('AXLE_PILOT_CONFIG_FILE', ''))
+        data, path = read_real_config(config)
+        host = build_opening_host(path.with_name('warp-retry-pilot.sqlite3'),
+            {(data['user_id'], data['chat_id']): 'owner'},
+            MemoryPolicy(version='warp-extraction-v2', processing_notice=
+                'Submit one authorized, redacted Warp screenshot. Axle fetches it from Telegram '
+                'and sends it to Meta Muse Wonder for extraction. Axle may retry processing '
+                'the same image within your consented session. Axle prices the confirmed draft '
+                'locally. The session expires after one hour. Telegram and provider histories '
+                'are separate. /forget withdraws consent.'),
+            provider_key=data['provider_key'], bot_token=data['bot_token'],
+            webhook_secret=data['webhook_secret'], allowed_host=data['allowed_host'],
+            global_limit=3, carrier_limit=3, warp=True)
+        asyncio.run(serve_host(host))
+    except Exception:
+        print('Warp pilot stopped. Check private pilot configuration and local listener.',
+              file=sys.stderr)
+        return 1
+    return 0
+
+
+if __name__ == '__main__':
+    if sys.argv[1:] == ['warp']:
+        raise SystemExit(main_warp())
+    raise SystemExit(main())

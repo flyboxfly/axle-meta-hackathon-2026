@@ -10,11 +10,17 @@ from .pilot_execution import ExtractionResponseError, _seconds
 from .vision import MAX_IMAGE_BYTES
 
 
-def _json_post(client,url,payload,headers,*,seconds,limit):
+def _json_post(client,url,payload,headers,*,seconds,limit,image_extraction=False):
     deadline=monotonic()+seconds
+    status = request_id = None
     try:
         with client.stream('POST',url,json=payload,headers={**headers,'Accept-Encoding':'identity'},
                            follow_redirects=False) as response:
+            if image_extraction:
+                status = response.status_code
+                request_id = response.headers.get('x-request-id')
+            if image_extraction and response.status_code in (500, 502, 503):
+                raise ExtractionResponseError('provider_unavailable', 'Image provider unavailable')
             if response.status_code != 200 or response.headers.get('content-encoding','identity') != 'identity':
                 raise ValueError()
             body=bytearray()
@@ -28,11 +34,25 @@ def _json_post(client,url,payload,headers,*,seconds,limit):
                     if key in result:raise ValueError()
                     result[key]=value
                 return result
-            value=json.loads(body,object_pairs_hook=unique)
-            if not isinstance(value,dict):raise ValueError()
+            try:
+                value = json.loads(body, object_pairs_hook=unique)
+                if not isinstance(value, dict):
+                    raise ValueError()
+            except ValueError:
+                if image_extraction:
+                    raise ExtractionResponseError('extraction_response_shape',
+                                                  'Invalid provider response') from None
+                raise
             return value
-    except Exception:
-        raise RuntimeError('Remote outcome uncertain; no automatic retry') from None
+    except Exception as exc:
+        if not image_extraction:
+            raise RuntimeError('Remote outcome uncertain; no automatic retry') from None
+        error = exc if isinstance(exc, ExtractionResponseError) else ExtractionResponseError(
+            'provider_error', 'Image provider outcome uncertain')
+        error.extraction_stage = 'provider_request' if status is None else 'provider_response'
+        error.provider_status = status
+        error.provider_request_id = request_id
+        raise error from None
 
 
 def _check_delivery(result,chat):
@@ -62,6 +82,19 @@ class TelegramSender:
                           seconds=self._seconds,limit=32768)
         _check_delivery(result,chat)
         return True
+
+    def salute(self, chat, message_id):
+        if type(chat) is not int or chat not in self._chats:
+            raise PermissionError('Unapproved chat')
+        if type(message_id) is not int or message_id <= 0:
+            raise ValueError('Positive message ID required')
+        url = self._url.removesuffix('/sendMessage') + '/setMessageReaction'
+        result = _json_post(self._client, url, {
+            'chat_id': chat,
+            'message_id': message_id,
+            'reaction': [{'type': 'emoji', 'emoji': '🫡'}],
+        }, {}, seconds=self._seconds, limit=32768)
+        return result.get('ok') is True and result.get('result') is True
 
 
 class TelegramWebAppButton:
@@ -143,7 +176,8 @@ def _response_text(data):
             if not isinstance(part, dict):
                 raise ValueError()
             if part.get('type') == 'refusal':
-                raise ValueError()
+                raise ExtractionResponseError('extraction_filtered',
+                                              'Screenshot extraction refused')
             if part.get('type') != 'output_text':
                 continue
             text = part.get('text')
@@ -175,7 +209,8 @@ class MetaImageClient:
         if len(json.dumps(payload).encode())>MAX_IMAGE_REQUEST_BYTES:
             raise ValueError('Provider request too large')
         data=_json_post(self._client,'https://api.meta.ai/v1/responses',payload,
-            {'Authorization':'Bearer '+self._key},seconds=self._seconds,limit=65536)
+            {'Authorization':'Bearer '+self._key},seconds=self._seconds,limit=65536,
+            image_extraction=True)
         try:
             text = _response_text(data)
             details = data.get('incomplete_details')

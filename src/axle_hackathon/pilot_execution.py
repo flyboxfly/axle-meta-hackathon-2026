@@ -12,8 +12,9 @@ def _seconds(value):
 
 # Sanitized failure categories only; exception text and payloads never persist.
 FAILURE_CATEGORIES = frozenset({
-    'provider_error', 'provider_timeout', 'invalid_model_response',
+    'provider_error', 'provider_timeout', 'provider_unavailable', 'invalid_model_response',
     'extraction_response_shape', 'extraction_incomplete', 'extraction_truncated',
+    'extraction_filtered',
     'extraction_empty', 'extraction_json', 'extraction_schema', 'extraction_limits',
     'extraction_issues_count',
     'extraction_response_limit', 'extraction_collection_limit',
@@ -29,6 +30,24 @@ class ExtractionResponseError(RuntimeError):
     def __init__(self, category, message):
         super().__init__(message)
         self.failure_category = category
+
+
+def extraction_failure_details(exc):
+    """Return only bounded metadata for the operator's local ledger."""
+    import re
+
+    stage = getattr(exc, 'extraction_stage', None)
+    if stage not in {'media', 'provider_request', 'provider_response',
+                     'extraction_validation', 'worker_timeout', 'delivery'}:
+        return None
+    status = getattr(exc, 'provider_status', None)
+    request_id = getattr(exc, 'provider_request_id', None)
+    return (
+        stage,
+        status if type(status) is int and 100 <= status <= 599 else None,
+        request_id if isinstance(request_id, str)
+        and re.fullmatch(r'[A-Za-z0-9][A-Za-z0-9_-]{0,127}', request_id) else None,
+    )
 
 
 def failure_category_for(exc, *, stage=None):
@@ -77,12 +96,17 @@ class BoundedDelegator:
         return self._run(self._delegator.evaluate, args, {})
 
     def extract(self, *args, **kwargs):
+        if kwargs.get('admit') is not None:
+            # A timed-out extraction must not publish a late draft.
+            timed_out = Event()
+            return self._run(self._delegator.extract, args,
+                             {**kwargs, 'timed_out': timed_out}, timed_out=timed_out)
         return self._run(self._delegator.extract, args, kwargs)
 
     def select_pricing(self, *args, **kwargs):
         return self._run(self._delegator.select_pricing, args, kwargs)
 
-    def _run(self, func, args, kwargs):
+    def _run(self, func, args, kwargs, *, timed_out=None):
         if not self._slot.acquire(blocking=False):
             raise RuntimeError('Provider capacity reached')
         def attempt():
@@ -94,12 +118,18 @@ class BoundedDelegator:
             raise RuntimeError('Provider unavailable') from None
         try:return future.result(timeout=self._timeout)
         except TimeoutError:
+            if timed_out is not None:
+                timed_out.set()
             error = RuntimeError('Provider outcome uncertain; no automatic retry')
             error.failure_category = 'provider_timeout'
+            error.extraction_stage = 'worker_timeout'
             raise error from None
         except Exception as exc:
             error = RuntimeError('Provider outcome uncertain; no automatic retry')
             error.failure_category = failure_category_for(exc)
+            details = extraction_failure_details(exc)
+            if details is not None:
+                error.extraction_stage, error.provider_status, error.provider_request_id = details
             raise error from None
 
     @property

@@ -7,7 +7,7 @@ from hashlib import sha256
 from secrets import token_urlsafe
 
 from .opening_workflow import pricing_blockers
-from .pilot_execution import FAILURE_CATEGORIES
+from .pilot_execution import FAILURE_CATEGORIES, extraction_failure_details
 from .pilot_memory import PilotMemory
 
 
@@ -91,6 +91,12 @@ class PilotInbox(PilotMemory):
             self._db.execute('''CREATE TABLE IF NOT EXISTS pilot_media (
                 update_id INTEGER PRIMARY KEY, carrier TEXT NOT NULL, file_id TEXT NOT NULL,
                 file_unique_id TEXT NOT NULL, mime TEXT NOT NULL, reported_size INTEGER)''')
+            columns = self._db.execute('PRAGMA table_info(pilot_media)').fetchall()
+            if not any(column[1] == 'message_id' for column in columns):
+                self._db.execute('ALTER TABLE pilot_media ADD COLUMN message_id INTEGER')
+            self._db.execute('''CREATE TABLE IF NOT EXISTS pilot_extraction_failures (
+                update_id INTEGER PRIMARY KEY, stage TEXT NOT NULL,
+                http_status INTEGER, request_id TEXT)''')
             # An interrupted paid request has an unknown outcome. Never replay it.
             self._db.execute("INSERT OR IGNORE INTO pilot_failure_categories "
                              "SELECT update_id,'unknown' FROM pilot_updates "
@@ -206,9 +212,9 @@ class PilotInbox(PilotMemory):
                 self._db.execute('INSERT INTO pilot_updates VALUES (?,?,?,?,?,?,NULL)',
                                  (update_id, carrier, action, revision, generation, 'queued'))
                 if action == 'screenshot':
-                    self._db.execute('INSERT INTO pilot_media VALUES (?,?,?,?,?,?)',
+                    self._db.execute('INSERT INTO pilot_media VALUES (?,?,?,?,?,?,?)',
                         (update_id, carrier, media['file_id'], media['file_unique_id'],
-                         media['mime'], media.get('reported_size')))
+                         media['mime'], media.get('reported_size'), message_id))
                 if action == 'forget':
                     self._db.execute('INSERT OR IGNORE INTO pilot_deletions VALUES (?)', (carrier,))
             if action == 'forget':
@@ -238,7 +244,7 @@ class PilotInbox(PilotMemory):
             carrier, _ = self._access(user, chat, token)
             row = self._db.execute('SELECT carrier,action,generation,status FROM pilot_updates '
                                    'WHERE update_id=?', (update_id,)).fetchone()
-            media = self._db.execute('SELECT file_id,file_unique_id,mime,reported_size FROM pilot_media '
+            media = self._db.execute('SELECT file_id,file_unique_id,mime,reported_size,message_id FROM pilot_media '
                                      'WHERE update_id=?', (update_id,)).fetchone()
             if (row is None or media is None or row[0] != carrier or row[1] != 'screenshot'
                     or row[3] != 'queued'
@@ -249,7 +255,7 @@ class PilotInbox(PilotMemory):
                 self._db.execute("UPDATE pilot_updates SET status='processing',claim=? WHERE update_id=?",
                                  (claim, update_id))
             return claim, dict(file_id=media[0], file_unique_id=media[1], mime=media[2],
-                               reported_size=media[3])
+                               reported_size=media[3], message_id=media[4])
 
     def claim_opening(self, user, chat, update_id, token) -> tuple[str, int]:
         """Reserve one pricing attempt for a confirmed opening revision."""
@@ -281,11 +287,11 @@ class PilotInbox(PilotMemory):
                     "AND carrier=? AND claim=? AND status='processing'",(update_id,carrier,claim)).rowcount
                 if count != 1:raise ValueError('Stale delivery attempt')
 
-    def finish(self, user, chat, update_id, claim, *, success: bool, category=None):
+    def finish(self, user, chat, update_id, claim, *, success: bool, category=None, extraction_error=None):
         """Record outcome only. No delivery or authorization follows from this status.
 
-        On failure only a sanitized category from FAILURE_CATEGORIES is kept;
-        exception text, payloads and provider detail are never persisted.
+        Failures retain a sanitized category and optional extraction metadata.
+        Exception text and payloads are never persisted.
         """
         with self._lock:
             carrier = self._carrier(user, chat)
@@ -302,6 +308,11 @@ class PilotInbox(PilotMemory):
                     self._db.execute(
                         'INSERT OR REPLACE INTO pilot_failure_categories '
                         'VALUES (?,?)', (update_id, kept))
+                    details = extraction_failure_details(extraction_error)
+                    if details is not None:
+                        self._db.execute(
+                            'INSERT INTO pilot_extraction_failures VALUES (?,?,?,?)',
+                            (update_id, *details))
                 if count != 1:
                     raise ValueError('Stale task completion')
 

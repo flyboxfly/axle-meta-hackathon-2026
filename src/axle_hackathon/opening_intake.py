@@ -248,6 +248,8 @@ def build_extraction_request(normalized: bytes, mime: str) -> dict:
 
 def parse_extraction_response(response) -> ScreenshotDraft:
     """Validate one completed Wonder extraction; incomplete results fail closed."""
+    if getattr(response, 'incomplete_reason', None) == 'content_filter':
+        raise ExtractionResponseError('extraction_filtered', 'Screenshot response incomplete or empty')
     if getattr(response, 'status', None) != 'completed':
         if getattr(response, 'incomplete_reason', None) == 'max_output_tokens':
             raise ExtractionResponseError('extraction_truncated',
