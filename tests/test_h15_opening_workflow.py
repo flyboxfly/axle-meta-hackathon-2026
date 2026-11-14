@@ -1186,10 +1186,22 @@ def test_warp_one_upload_three_attempts_and_local_price(store, third_succeeds):
                             weight_lbs=(0, '0 lbs'))
         return rest_extraction(result if third_succeeds else 'invalid')
 
-    http = httpx.Client(transport=httpx.MockTransport(stage_handler([], model=model)))
+    from axle_hackathon.pilot_transports import TelegramSender
+
+    reactions = []
+    handle = stage_handler([], model=model)
+
+    def transport(request):
+        if request.url.path.endswith('/setMessageReaction'):
+            reactions.append(json.loads(request.content))
+            return response(200, json_value={'ok': True, 'result': True})
+        return handle(request)
+
+    http = httpx.Client(transport=httpx.MockTransport(transport))
     inner = OpeningDelegator(store, store._opening, MetaImageClient(http, 'invented-key', seconds=5),
                              None, media=TelegramMedia(http, TOKEN, seconds=5))
     send = lambda chat, text: sends.append(text) or True
+    send.salute = TelegramSender(http, TOKEN, allowed_chats={1}, seconds=5).salute
     worker = OpeningWorker(store, inner, send, global_limit=3, carrier_limit=3, warp=True)
     app = create_opening_app(store, webhook_secret=SECRET, allowed_host='testserver',
                              conversation=OpeningConversation(store), send=send, warp=True)
@@ -1219,7 +1231,9 @@ def test_warp_one_upload_three_attempts_and_local_price(store, third_succeeds):
         assert post(6, photo=photo) == 'ignored'
         assert worker.tick() == ('completed' if third_succeeds else 'uncertain')
         assert len(calls) == 3 and len(set(calls)) == 1
-        assert sends[-2] == '🫡'
+        assert reactions == [{'chat_id': 1, 'message_id': 5,
+                              'reaction': [{'type': 'emoji', 'emoji': '🫡'}]}]
+        assert '🫡' not in sends
         assert 'attempt' not in sends[-1].lower()
         if third_succeeds:
             assert 'UNCONFIRMED screenshot draft' in sends[-1]
@@ -1276,7 +1290,7 @@ def test_warp_does_not_retry_unavailable_media_ambiguous_timeout_or_withdrawal(
     elif failure == 'timeout':
         assert 'Contact the pilot operator' in sent[-1]
     else:
-        assert len(sent) == 1
+        assert sent == []
 
 
 def test_warp_budget_survives_restart(tmp_path):

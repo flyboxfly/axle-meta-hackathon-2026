@@ -76,6 +76,19 @@ class TelegramSender:
         _check_delivery(result,chat)
         return True
 
+    def salute(self, chat, message_id):
+        if type(chat) is not int or chat not in self._chats:
+            raise PermissionError('Unapproved chat')
+        if type(message_id) is not int or message_id <= 0:
+            raise ValueError('Positive message ID required')
+        url = self._url.removesuffix('/sendMessage') + '/setMessageReaction'
+        result = _json_post(self._client, url, {
+            'chat_id': chat,
+            'message_id': message_id,
+            'reaction': [{'type': 'emoji', 'emoji': '🫡'}],
+        }, {}, seconds=self._seconds, limit=32768)
+        return result.get('ok') is True and result.get('result') is True
+
 
 class TelegramWebAppButton:
     """One inline web_app button per message; URL fixed to the allowed host.

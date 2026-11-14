@@ -1219,7 +1219,8 @@ def run_screenshot(inbox, delegator, send, *, user: int, chat: int, update_id: i
         except KeyError:
             expected = 0
     warp = getattr(delegator, 'warp', False)
-    if warp:
+    salute = getattr(send, 'salute', None)
+    if warp and salute is not None and media['message_id'] is not None:
         with inbox._lock:
             if inbox._delivery_pool is None:
                 inbox._delivery_pool = DeliveryPool(None)
@@ -1230,7 +1231,7 @@ def run_screenshot(inbox, delegator, send, *, user: int, chat: int, update_id: i
                 inbox._access(user, chat, token)
 
         try:
-            pool.send(chat, '🫡', acknowledgement_guard, send)
+            pool.send(chat, media['message_id'], acknowledgement_guard, salute)
         except Exception:
             pass  # The result has its own guarded delivery attempt.
     stage = 'attempt'
