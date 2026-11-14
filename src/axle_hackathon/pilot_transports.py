@@ -34,8 +34,15 @@ def _json_post(client,url,payload,headers,*,seconds,limit,image_extraction=False
                     if key in result:raise ValueError()
                     result[key]=value
                 return result
-            value=json.loads(body,object_pairs_hook=unique)
-            if not isinstance(value,dict):raise ValueError()
+            try:
+                value = json.loads(body, object_pairs_hook=unique)
+                if not isinstance(value, dict):
+                    raise ValueError()
+            except ValueError:
+                if image_extraction:
+                    raise ExtractionResponseError('extraction_response_shape',
+                                                  'Invalid provider response') from None
+                raise
             return value
     except Exception as exc:
         if not image_extraction:

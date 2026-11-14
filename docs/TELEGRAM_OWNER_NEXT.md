@@ -84,9 +84,9 @@ Provider reservations are not billing receipts.
 
 Axle rechecks consent and the trip revision before spending. An unavailable
 Telegram image prompts a resend without consuming a provider reservation.
-An ambiguous request outcome pauses automatic retries. After the cumulative
-allowance is exhausted without a usable draft, Telegram offers manual trip
-entry with the confirmed profile. The carrier reviews and confirms the current
+An ambiguous request outcome stops automatic retries and opens manual trip
+entry with the confirmed profile. An exhausted allowance also opens manual
+entry. Further screenshot uploads are ignored during manual entry. The carrier reviews and confirms the current
 revision before `/price` computes the result locally.
 
 For an approved live run, use a private real-pilot config whose

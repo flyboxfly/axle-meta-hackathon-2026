@@ -859,8 +859,7 @@ def create_opening_app(inbox, *, webhook_secret: str, allowed_host: str, convers
                                     "SELECT 1 FROM pilot_updates WHERE carrier=? AND action='screenshot' "
                                     "AND status IN ('queued','processing','sending')", (carrier,)
                                 ).fetchone()
-                                if (flow is None or flow['step'] != 'photo' or pending
-                                        or flow.get('warp_upload_paused')):
+                                if flow is None or flow['step'] != 'photo' or pending:
                                     return reply(200, 'ignored')
                             accepted = inbox.submit(user, chat, data['update_id'], 'screenshot',
                                 token=token, message_id=message_id, media=dict(
@@ -1294,16 +1293,13 @@ def run_screenshot(inbox, delegator, send, *, user: int, chat: int, update_id: i
                         flow = inbox._conversation_states.get(carrier)
                         if revision != expected or flow is None or flow['step'] != 'photo':
                             raise ValueError('Result changed')
-                        if delegator.screenshot_budget_exhausted(user, chat, token):
-                            flow.update(step='manual_trip', revision=expected, nonce=token_urlsafe(12))
-                            message = MANUAL_TRIP_PROMPT
-                        elif category == 'media_error':
+                        if (category == 'media_error'
+                                and not delegator.screenshot_budget_exhausted(user, chat, token)):
                             message = ('Axle couldn’t open the image. When safely parked, '
                                        'resend it as a PNG or JPEG.')
                         else:
-                            flow['warp_upload_paused'] = True
-                            message = ('Axle couldn’t finish reading the screenshot. '
-                                       'Contact the pilot operator before sending another image.')
+                            flow.update(step='manual_trip', revision=expected, nonce=token_urlsafe(12))
+                            message = MANUAL_TRIP_PROMPT
                         flow['warp_screenshot_notice'] = message
                     if inbox._delivery_pool is None:
                         inbox._delivery_pool = DeliveryPool(None)

@@ -1180,7 +1180,7 @@ def test_warp_one_upload_three_attempts_and_local_price(store, third_succeeds):
         if len(calls) == 1:
             return response(503, json_value={})
         if len(calls) == 2:
-            return rest_extraction('invalid')
+            return httpx.Response(200, stream=httpx.ByteStream(b'{'))
         result = draft_text(pickup=('North Brunswick, NJ', 'North Brunswick, NJ'),
                             delivery=('Dayton, NJ', 'Dayton, NJ'),
                             weight_lbs=(0, '0 lbs'))
@@ -1286,11 +1286,17 @@ def test_warp_does_not_retry_unavailable_media_ambiguous_timeout_or_withdrawal(
     assert len(calls) == expected_attempts
     assert store._db.execute(
         'SELECT COALESCE(SUM(attempts),0) FROM pilot_budget').fetchone() == (expected_attempts,)
-    assert not any('enter trip details' in message for message in sent)
     if failure == 'media':
         assert 'resend it' in sent[-1]
     elif failure == 'timeout':
-        assert 'Contact the pilot operator' in sent[-1]
+        assert 'enter trip details' in sent[-1]
+        assert flow['step'] == 'manual_trip'
+        conversation.handle(1, 1, 'deadhead 40\nloaded 7.63\nreposition 20')
+        snapshot = store._opening.get(1, 1)
+        conversation.handle(1, 1, f"/confirm {flow['nonce']}")
+        result = worker.opening(1, 1, token, snapshot.revision)['result']
+        assert str(result['opening_bid']) == '150.00'
+        assert store._db.execute('SELECT SUM(attempts) FROM pilot_budget').fetchone() == (1,)
     else:
         assert sent == []
 
