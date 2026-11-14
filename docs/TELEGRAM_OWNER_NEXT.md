@@ -238,3 +238,17 @@ The fixture made zero live Muse Wonder requests.
 The owner sent `/forget` and did not receive the acknowledgment. Telegram
 verified webhook removal with zero pending updates and no recorded error.
 The owner confirmed the pilot and tunnel stopped.
+
+### Live timeout fallback smoke test
+
+On November 14, 2026, the owner ran the timeout fixture at `2a575fe`, based
+on merged `develop` commit `5af8721`. One synthetic upload produced one
+simulated read timeout and opened manual trip entry in Telegram. The owner
+confirmed revision 1 with 40 deadhead, 7.63 loaded, and 20 reposition miles.
+Local pricing returned 67.63 total miles, $84.54 estimated operating cost,
+$135.26 target revenue, and a $150.00 preliminary opening bid. The pilot
+showed one fixture attempt. The fixture made zero live Muse Wonder calls.
+
+Axle acknowledged `/forget` before webhook removal. Telegram then reported
+zero pending updates and no recorded error. The owner confirmed the Axle
+pilot and Cloudflare tunnel both stopped.

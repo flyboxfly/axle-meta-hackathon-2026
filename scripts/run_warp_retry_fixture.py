@@ -1,4 +1,5 @@
 """Private owner test with live Telegram and a simulated image provider."""
+import argparse
 import asyncio
 from hashlib import sha256
 import json
@@ -44,26 +45,45 @@ def retry_fixture():
     return httpx.MockTransport(respond)
 
 
+def timeout_fixture():
+    attempts = 0
+
+    def respond(request):
+        nonlocal attempts
+        attempts += 1
+        print(f'Fixture attempt {attempts} returned a simulated read timeout.', flush=True)
+        raise httpx.ReadTimeout('Simulated provider read timeout', request=request)
+
+    return httpx.MockTransport(respond)
+
+
 def main():
+    parser = argparse.ArgumentParser(description=__doc__)
+    parser.add_argument('--timeout', action='store_true', help='Exercise manual trip entry')
+    args = parser.parse_args()
+    scenario = 'timeout' if args.timeout else 'retry'
+    transport = timeout_fixture() if args.timeout else retry_fixture()
+    outcome = ('offers manual trip entry after a simulated timeout' if args.timeout
+               else 'returns a fixed demo lane after a simulated failure')
     configure_private_logging()
     os.umask(0o077)
     data, path = read_real_config(os.environ.get('AXLE_PILOT_CONFIG_FILE', ''))
     host = build_opening_host(
-        path.with_name('warp-retry-fixture.sqlite3'),
+        path.with_name(f'warp-{scenario}-fixture.sqlite3'),
         {(data['user_id'], data['chat_id']): 'owner'},
         MemoryPolicy(
-            version='warp-retry-fixture-v1',
+            version=f'warp-{scenario}-fixture-v1',
             processing_notice=(
-                'Owner retry test with a simulated extraction provider. Submit one fictional '
+                f'Owner {scenario} test with a simulated extraction provider. Submit one fictional '
                 'PNG or JPEG with no private information. Axle fetches it from Telegram and '
-                'returns a fixed demo lane after a simulated failure. The image stays in the '
+                f'{outcome}. The image stays in the '
                 'pilot process after download. Telegram retains its own history. '
                 '/forget withdraws consent.'
             ),
         ),
         provider_key='fixture-key', bot_token=data['bot_token'],
         webhook_secret=data['webhook_secret'], allowed_host=data['allowed_host'],
-        global_limit=3, carrier_limit=3, warp=True, image_transport=retry_fixture(),
+        global_limit=3, carrier_limit=3, warp=True, image_transport=transport,
     )
     asyncio.run(serve_host(host))
 
