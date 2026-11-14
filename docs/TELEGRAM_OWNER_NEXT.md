@@ -64,3 +64,42 @@ its current status and deployed revision are unknown. No hackathon credits are
 assumed. A live owner run needs a privately configured bot/provider account,
 confirmed available funding and approved isolated runtime; new out-of-pocket
 charges require owner approval.
+
+## Warp screenshot recovery — November 14, 2026
+
+This post-hackathon increment branches from develop at `5c9a2e8`.
+The PR #29 owner retest recorded one provider reservation and an uncertain
+provider error without a Telegram result. Issue-note quality and live pricing
+were unverified in that run. The retry increment is verified with offline
+fixtures.
+
+The Warp launcher uses `warp-extraction-v2` and session-only consent. The
+carrier sends one screenshot and sees a processing acknowledgement. Axle makes
+a fresh extraction request with the same image after a retryable provider
+failure or an unusable extraction response. The private
+`warp-retry-pilot.sqlite3` ledger caps the pilot at three provider reservations
+across sessions and restarts. Keep that ledger and its owner lock in place.
+This ledger belongs to the new pilot and excludes the earlier PR #29 attempt.
+Provider reservations are not billing receipts.
+
+Axle rechecks consent and the trip revision before spending. An unavailable
+Telegram image prompts a resend without consuming a provider reservation.
+An ambiguous request outcome pauses automatic retries. After the cumulative
+allowance is exhausted without a usable draft, Telegram offers manual trip
+entry with the confirmed profile. The carrier reviews and confirms the current
+revision before `/price` computes the result locally.
+
+For an approved live run, use a private real-pilot config whose
+`allowed_host` matches the current tunnel. Verify credits cover the remaining
+allowance before launching. From the pilot checkout, with the virtual
+environment available:
+
+```bash
+AXLE_PILOT_CONFIG_FILE=/absolute/path/to/private/warp-config.json \
+  PYTHONPATH=src .venv/bin/python -m axle_hackathon.pilot_launch warp
+```
+
+Use the same config with `pilot_setup register` and `pilot_setup check`.
+Complete teardown with `/forget`, `pilot_setup remove`, and
+`pilot_setup check` before stopping the pilot and tunnel. Keep credentials,
+raw screenshots and private identifiers out of the test record.

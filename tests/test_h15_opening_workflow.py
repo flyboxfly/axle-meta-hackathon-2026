@@ -1167,3 +1167,169 @@ def test_pricing_response_shapes_fail_closed(store, output, status):
     assert len(seen['tools']) == 1
     assert store._opening.last_result(1, 1) is None
     assert store._opening.get(1, 1).revision == snapshot.revision
+
+
+@pytest.mark.parametrize('third_succeeds', [True, False])
+def test_warp_one_upload_three_attempts_and_local_price(store, third_succeeds):
+    calls, sends = [], []
+
+    def model(request):
+        payload = json.loads(request.content)
+        image = payload['input'][0]['content'][1]['image_url']
+        calls.append(image)
+        if len(calls) == 1:
+            return response(503, json_value={})
+        if len(calls) == 2:
+            return rest_extraction('invalid')
+        result = draft_text(pickup=('North Brunswick, NJ', 'North Brunswick, NJ'),
+                            delivery=('Dayton, NJ', 'Dayton, NJ'),
+                            weight_lbs=(0, '0 lbs'))
+        return rest_extraction(result if third_succeeds else 'invalid')
+
+    http = httpx.Client(transport=httpx.MockTransport(stage_handler([], model=model)))
+    inner = OpeningDelegator(store, store._opening, MetaImageClient(http, 'invented-key', seconds=5),
+                             None, media=TelegramMedia(http, TOKEN, seconds=5))
+    send = lambda chat, text: sends.append(text) or True
+    worker = OpeningWorker(store, inner, send, global_limit=3, carrier_limit=3, warp=True)
+    app = create_opening_app(store, webhook_secret=SECRET, allowed_host='testserver',
+                             conversation=OpeningConversation(store), send=send, warp=True)
+    with http, TestClient(app) as client:
+        def post(number, **payload):
+            reply = client.post('/telegram/webhook', headers={
+                'X-Telegram-Bot-Api-Secret-Token': SECRET}, json=dict(update_id=number,
+                message=dict(message_id=number, **{'from': dict(id=1, is_bot=False)},
+                             chat=dict(id=1, type='private'), **payload)))
+            assert reply.status_code == 200
+            return reply.json()['status']
+
+        def command(number, text):
+            return post(number, text=text)
+
+        def nonce():
+            return sends[-1].split('\nStep: ')[1].split('\n')[0]
+
+        assert command(1, '/start') == 'processed'
+        assert command(2, f'/reply {nonce()} session') == 'processed'
+        assert command(3, 'cpm 1.25; target 2.00; minimum 150; equipment 26ft box truck; '
+                          'unit WARP-TEST') == 'processed'
+        assert command(4, f'/confirm {nonce()}') == 'processed'
+        photo = [dict(file_id='file-1', file_unique_id='unique-1', file_size=len(jpeg_bytes()))]
+        assert post(5, photo=photo) == 'queued'
+        assert post(5, photo=photo) == 'duplicate'
+        assert post(6, photo=photo) == 'ignored'
+        assert worker.tick() == ('completed' if third_succeeds else 'uncertain')
+        assert len(calls) == 3 and len(set(calls)) == 1
+        assert sends[-2] == 'I’m reading your load screenshot.'
+        assert 'attempt' not in sends[-1].lower()
+        if third_succeeds:
+            assert 'UNCONFIRMED screenshot draft' in sends[-1]
+            assert store._opening.get(1, 1).draft.facts.weight_lbs is None
+        else:
+            assert 'enter trip details' in sends[-1]
+            assert worker.tick() == 'idle'
+            assert post(7, photo=photo) == 'ignored'
+        assert command(8, 'deadhead 40\nloaded 7.63\nreposition 20') == 'processed'
+        assert command(9, f'/confirm {nonce()}') == 'processed'
+        assert command(10, '/price') == 'queued'
+        assert worker.tick() == 'completed'
+        assert all(amount in sends[-1] for amount in ('67.63', '84.54', '135.26', '150.00'))
+        assert len(calls) == 3
+        assert store._db.execute('SELECT SUM(attempts) FROM pilot_budget').fetchone() == (3,)
+
+
+@pytest.mark.parametrize('failure,expected_attempts', [('media', 0), ('timeout', 1), ('forget', 1)])
+def test_warp_does_not_retry_unavailable_media_ambiguous_timeout_or_withdrawal(
+        store, failure, expected_attempts):
+    sent, calls = [], []
+    conversation = OpeningConversation(store)
+    conversation.handle(1, 1, '/start')
+    flow = store._conversation_states['owner']
+    conversation.handle(1, 1, f"/reply {flow['nonce']} session")
+    conversation.handle(1, 1, 'cpm 1.25; target 2; minimum 150; equipment 26ft box truck')
+    conversation.handle(1, 1, f"/confirm {flow['nonce']}")
+    token = flow['token']
+
+    def admit_then_fail(*args, admit, **kwargs):
+        if failure == 'media':
+            raise RuntimeError('Media could not be read')
+        admit()
+        calls.append(1)
+        if failure == 'forget':
+            store.forget(1, 1)
+            raise RuntimeError('Invalid model response')
+        error = RuntimeError('Request outcome uncertain')
+        error.failure_category = 'provider_timeout'
+        raise error
+
+    worker = OpeningWorker(store, NS(extract=admit_then_fail),
+                           lambda chat, text: sent.append(text) or True,
+                           global_limit=3, carrier_limit=3, warp=True)
+    assert submit_jpeg(store, token)
+    assert worker.tick() == 'uncertain'
+    assert worker.tick() == 'idle'
+    assert len(calls) == expected_attempts
+    assert store._db.execute(
+        'SELECT COALESCE(SUM(attempts),0) FROM pilot_budget').fetchone() == (expected_attempts,)
+    assert not any('enter trip details' in message for message in sent)
+    if failure == 'media':
+        assert 'resend it' in sent[-1]
+    elif failure == 'timeout':
+        assert 'Contact the pilot operator' in sent[-1]
+    else:
+        assert len(sent) == 1
+
+
+def test_warp_budget_survives_restart(tmp_path):
+    path = tmp_path / 'budget.sqlite3'
+    policy = MemoryPolicy(version='warp-extraction-v2', processing_notice='Offline test')
+    calls = []
+
+    def extract(*args, admit, **kwargs):
+        admit()
+        calls.append(1)
+        raise RuntimeError('Model extraction failed')
+
+    for expected in (1, 2, 3, 3):
+        inbox = PilotInbox(path, BINDINGS, policy)
+        inbox._opening = OpeningSessions(BINDINGS)
+        try:
+            access = session(inbox)
+            worker = OpeningWorker(inbox, NS(extract=extract), lambda *_: True,
+                                   global_limit=3, carrier_limit=3, warp=True)
+            with pytest.raises(RuntimeError):
+                worker.screenshot(1, 1, access.token, 'file-1', 'image/jpeg',
+                                  expected_revision=0)
+            assert len(calls) == expected
+        finally:
+            inbox.close()
+
+
+def test_warp_timed_out_extraction_cannot_publish_late_draft(store):
+    from threading import Event
+    from axle_hackathon.pilot_execution import BoundedDelegator
+
+    access = session(store)
+    release = Event()
+    started = Event()
+    inner = delegator(store, [])
+    def delayed(**kwargs):
+        started.set()
+        release.wait(5)
+        return extraction_response(draft_text(pickup=('Dayton, NJ', 'Dayton, NJ')))
+
+    inner._image.responses.create = delayed
+    bounded = BoundedDelegator(inner, timeout=.2)
+    worker = OpeningWorker(store, bounded, lambda *_: True,
+                           global_limit=3, carrier_limit=3, warp=True)
+    try:
+        with pytest.raises(RuntimeError) as exc:
+            worker.screenshot(1, 1, access.token, 'file-1', 'image/png', expected_revision=0)
+        assert started.is_set()
+        assert exc.value.failure_category == 'provider_timeout'
+        assert store._db.execute('SELECT SUM(attempts) FROM pilot_budget').fetchone() == (1,)
+    finally:
+        release.set()
+        bounded.close()
+        assert bounded._executor.drained.wait(5)
+    with pytest.raises(KeyError):
+        store._opening.get(1, 1)

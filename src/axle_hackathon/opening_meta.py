@@ -84,14 +84,28 @@ class OpeningDelegator:
         self._busy = Lock()
 
     def extract(self, user: int, chat: int, token: str, file_id: str, mime: str,
-                *, expected_revision: int) -> dict:
+                *, expected_revision: int, admit=None, retry=False, timed_out=None) -> dict:
         if not self._busy.acquire(blocking=False):
             raise RuntimeError('Model selection already in progress')
         try:
-            self._memory._access(user, chat, token)
-            raw, mime = self._media.fetch(file_id, mime)
-            normalized, mime = normalize_screenshot(raw, mime)
+            with self._memory._lock:
+                self._memory._access(user, chat, token)
+            try:
+                raw, mime = self._media.fetch(file_id, mime)
+                normalized, mime = normalize_screenshot(raw, mime)
+            except Exception:
+                if admit is None:
+                    raise
+                raise RuntimeError('Media could not be read') from None
             payload = build_extraction_request(normalized, mime)
+            if retry:
+                payload['input'][0]['content'][0]['text'] += (
+                    ' Return one complete JSON object with brief, complete issue sentences. '
+                    'Leave unreadable or absent values null.')
+            if timed_out is not None and timed_out.is_set():
+                raise TimeoutError('Extraction timed out')
+            if admit is not None:
+                admit()
             started = monotonic()
             try:
                 response = self._image.responses.create(**payload)
@@ -100,6 +114,9 @@ class OpeningDelegator:
             except Exception:
                 raise RuntimeError('Model extraction failed; no automatic retry') from None
             draft = parse_extraction_response(response)
+            if admit is not None and not any(
+                    value is not None for value in draft.facts.model_dump().values()):
+                raise ExtractionResponseError('extraction_empty', 'No readable trip facts')
             # A new opportunity starts with truck defaults and fresh trip facts.
             try:
                 profile = self._sessions.get_profile(user, chat)
@@ -118,8 +135,12 @@ class OpeningDelegator:
             trip = {name: getattr(draft.facts, name) for name in TRIP_SCREENSHOT_FIELDS
                     if getattr(draft.facts, name)}
             sources.update(dict.fromkeys(trip, "screenshot"))
-            snapshot = self._sessions.put(user, chat, draft, pricing, trip=OpeningTrip(**trip),
-                                          expected_revision=expected_revision, sources=sources)
+            with self._memory._lock:
+                if timed_out is not None and timed_out.is_set():
+                    raise TimeoutError('Extraction timed out')
+                self._memory._access(user, chat, token)
+                snapshot = self._sessions.put(user, chat, draft, pricing, trip=OpeningTrip(**trip),
+                                              expected_revision=expected_revision, sources=sources)
             return dict(snapshot=snapshot,
                 trace=_metadata(response, started, role='intake',
                     tool='screenshot_extraction', revision=snapshot.revision))

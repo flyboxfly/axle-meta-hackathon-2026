@@ -14,7 +14,7 @@ from fastapi.responses import JSONResponse
 from .opening_tomtom import telegram_route
 from .opening_profile_store import OpeningProfileStore
 from .opening_intake import IntakeFacts, ScreenshotDraft, parse_media_update
-from .opening_workflow import (OpeningPricing, OpeningProfile, OpeningTrip,
+from .opening_workflow import (OpeningPricing, OpeningProfile, OpeningSnapshot, OpeningTrip,
                                display_expense_claim, missing_input_labels, pricing_blockers,
                                render_review)
 from .pilot_delivery import DeliveryPool
@@ -41,6 +41,10 @@ TRIP_PROMPT = ('Reply "payout goal 480" to set a gross payout goal, or keep your
     'Optional: duration, availability (feasible, blocked, or unknown), handling.')
 PHOTO_PROMPT = ('Send one PNG or JPEG screenshot of the opportunity. '
     'Processing before consent is never performed; /forget withdraws consent.')
+MANUAL_TRIP_PROMPT = ('Axle couldn’t read the load details. Your truck profile is ready. '
+    'To continue, enter trip details in one message, for example:\n'
+    'deadhead 40\nloaded 180\nreposition 20\n'
+    'You can also include pickup, delivery, and posted payout if known.')
 
 
 def _decimal(value, *, name, low, high, allow_zero):
@@ -162,9 +166,11 @@ _RETIRE_KEYWORDS = {
 class OpeningConversation:
     """Deterministic opening intake; no model extraction or synthetic reuse."""
     def __init__(self, inbox, *,
-                 offline_deadhead_lookup: Callable[[tuple[float, float], str], Decimal | None] | None = None):
+                 offline_deadhead_lookup: Callable[[tuple[float, float], str], Decimal | None] | None = None,
+                 session_only=False):
         # Runs under the inbox lock. Only local fixture lookups belong here.
         self.offline_deadhead_lookup = offline_deadhead_lookup
+        self.session_only = session_only
         self.inbox = inbox
         self._flows = inbox._conversation_states
         self.profiles = OpeningProfileStore(inbox)
@@ -191,7 +197,8 @@ class OpeningConversation:
                                            values={}, token=None)
                 return self._prompt(carrier, notice.text + '\nReal opening-price test. '
                     'Optional location pins are rounded and held in active trip memory. '
-                    'Reply session or remember. Reply only while safely parked.')
+                    + ('Reply session. ' if self.session_only else 'Reply session or remember. ')
+                    + 'Reply only while safely parked.')
             flow = self._flows.get(carrier)
             if flow is None:
                 raise ValueError('Start a fresh intake with /start')
@@ -239,8 +246,9 @@ class OpeningConversation:
                 raise ValueError('Unexpected conversation command')
             if flow['step'] == 'memory':
                 choices = {'session': 'session_only', 'remember': 'remember_profile'}
-                if value not in choices:
-                    raise ValueError('Choose session or remember')
+                if value not in choices or (self.session_only and value != 'session'):
+                    raise ValueError('Choose session for this pilot' if self.session_only
+                                     else 'Choose session or remember')
                 access = self.inbox.consent(user, chat, flow['notice'].token, choices[value])
                 flow['token'] = access.token
                 self._flows[carrier] = flow
@@ -267,6 +275,8 @@ class OpeningConversation:
             return self._profile_message(user, chat, carrier, flow, text)
         if step == 'photo':
             raise ValueError('Send one PNG or JPEG screenshot of the opportunity first')
+        if step == 'manual_trip':
+            return self._apply_message(user, chat, carrier, flow, text)
         if step == 'trip':
             if text.strip().lower() == 'skip':
                 try:
@@ -339,6 +349,9 @@ class OpeningConversation:
         except PermissionError:
             self._flows.pop(carrier, None)
             raise
+        if flow['step'] == 'manual_trip' or 'warp_screenshot_notice' in flow:
+            return self._prompt(carrier, flow.get('warp_screenshot_notice', MANUAL_TRIP_PROMPT),
+                                save=False)
         notice = flow.pop('screenshot_notice', False)
         def done(prompt):
             if notice:
@@ -424,7 +437,18 @@ class OpeningConversation:
         pairs = parse_fields(text, tuple(FIELD_LABELS))
         if 'target_total_payout' in pairs and 'target_all_mile_rpm' in pairs:
             raise ValueError('Choose a total payout goal or a per-mile target, not both')
-        snapshot = self.opening.get(user, chat)
+        if flow['step'] == 'manual_trip':
+            profile = self.opening.get_profile(user, chat)
+            pricing = OpeningPricing(operating_cpm=profile.operating_cpm,
+                expense_claim=profile.expense_claim, target_all_mile_rpm=profile.target_all_mile_rpm,
+                minimum_job_charge=profile.minimum_job_charge)
+            sources = {name: 'profile' for name in (
+                'operating_cpm', 'target_all_mile_rpm', 'minimum_job_charge')
+                if getattr(pricing, name) is not None}
+            snapshot = OpeningSnapshot(flow['revision'], ScreenshotDraft(facts=IntakeFacts()),
+                                       pricing, sources=sources)
+        else:
+            snapshot = self.opening.get(user, chat)
         updated = self._apply_pairs(user, chat, snapshot, pairs)
         return self._review_trip(user, chat, carrier, flow, updated)
 
@@ -443,6 +467,7 @@ class OpeningConversation:
 
     def _review_trip(self, user, chat, carrier, flow, updated):
         flow['revision'] = updated.revision
+        flow.pop('warp_screenshot_notice', None)
         flow['step'] = 'review'
         flow['trip_done'] = True
         flow['nonce'] = token_urlsafe(12)
@@ -461,7 +486,10 @@ class OpeningConversation:
     def _prompt(self, carrier, prompt, *, save=True):
         if save:
             self._flows[carrier]['last_prompt'] = prompt
-        return prompt + step_trailer(self._flows[carrier]['step'], self._flows[carrier]['nonce'])
+        flow = self._flows[carrier]
+        if self.session_only and flow['step'] == 'memory':
+            return prompt + f"\nStep: {flow['nonce']}\nReply format: /reply STEP session"
+        return prompt + step_trailer(flow['step'], flow['nonce'])
 
 
 def validate_profile_pairs(pairs):
@@ -718,7 +746,7 @@ def step_trailer(step, nonce):
 
 def create_opening_app(inbox, *, webhook_secret: str, allowed_host: str, conversation=None, send=None,
                        miniapp_bot_token: str | None = None, miniapp_button=None,
-                       deadhead_adapter=None, deadhead_trucks=None):
+                       deadhead_adapter=None, deadhead_trucks=None, warp=False):
     if not re.fullmatch(r'[A-Za-z0-9_-]{32,256}', webhook_secret):
         raise ValueError('Explicit webhook secret required')
     if not _is_valid_hostname(allowed_host):
@@ -826,12 +854,21 @@ def create_opening_app(inbox, *, webhook_secret: str, allowed_host: str, convers
                                 return reply(200, 'duplicate')
                             if inbox.stale_message(user, chat, message_id):
                                 return reply(200, 'stale')
+                            if warp:
+                                pending = inbox._db.execute(
+                                    "SELECT 1 FROM pilot_updates WHERE carrier=? AND action='screenshot' "
+                                    "AND status IN ('queued','processing','sending')", (carrier,)
+                                ).fetchone()
+                                if (flow is None or flow['step'] != 'photo' or pending
+                                        or flow.get('warp_upload_paused')):
+                                    return reply(200, 'ignored')
                             accepted = inbox.submit(user, chat, data['update_id'], 'screenshot',
                                 token=token, message_id=message_id, media=dict(
                                     file_id=media.file_id, file_unique_id=media.file_unique_id,
                                     mime=media.mime, reported_size=media.reported_size))
                             if accepted and flow is not None:
                                 flow.pop('screenshot_notice', None)
+                                flow.pop('warp_screenshot_notice', None)
                             return reply(200, 'queued' if accepted else 'duplicate')
                     if guidance is not None:
                         def guidance_guard():
@@ -1168,7 +1205,7 @@ def negotiation_guidance(kind, result):
 
 
 def run_screenshot(inbox, delegator, send, *, user: int, chat: int, update_id: int):
-    """One extraction attempt; injected sender MUST be bounded and nonretrying."""
+    """Process one screenshot claim; the injected sender must be bounded."""
     with inbox._lock:
         carrier = inbox._carrier(user, chat)
         access = inbox._active.get(carrier)
@@ -1181,12 +1218,28 @@ def run_screenshot(inbox, delegator, send, *, user: int, chat: int, update_id: i
             expected = opening.get(user, chat).revision
         except KeyError:
             expected = 0
+    warp = getattr(delegator, 'warp', False)
+    if warp:
+        with inbox._lock:
+            if inbox._delivery_pool is None:
+                inbox._delivery_pool = DeliveryPool(None)
+            pool = inbox._delivery_pool
+
+        def acknowledgement_guard():
+            with inbox._lock:
+                inbox._access(user, chat, token)
+
+        try:
+            pool.send(chat, 'I’m reading your load screenshot.', acknowledgement_guard, send)
+        except Exception:
+            pass  # The result has its own guarded delivery attempt.
     stage = 'attempt'
     try:
         outcome = delegator.screenshot(user, chat, token, media['file_id'], media['mime'],
                                        expected_revision=expected)
         snapshot = outcome['snapshot']
         with inbox._lock:
+            inbox._access(user, chat, token)
             current = opening.get(user, chat)
             if current.revision != expected + 1 or current != snapshot:
                 raise ValueError('Result changed')
@@ -1217,7 +1270,7 @@ def run_screenshot(inbox, delegator, send, *, user: int, chat: int, update_id: i
         inbox.finish(user, chat, update_id, claim, success=True)
     except Exception as exc:
         category = failure_category_for(exc, stage=stage)
-        if stage == 'attempt' and category.startswith('extraction_'):
+        if stage == 'attempt' and (warp or category.startswith('extraction_')):
             def failure_guard():
                 with inbox._lock:
                     inbox._access(user, chat, token)
@@ -1230,12 +1283,33 @@ def run_screenshot(inbox, delegator, send, *, user: int, chat: int, update_id: i
                     inbox.start_delivery(user, chat, update_id, claim)
             try:
                 with inbox._lock:
+                    message = None
+                    if warp:
+                        inbox._access(user, chat, token)
+                        try:
+                            revision = opening.get(user, chat).revision
+                        except KeyError:
+                            revision = 0
+                        flow = inbox._conversation_states.get(carrier)
+                        if revision != expected or flow is None or flow['step'] != 'photo':
+                            raise ValueError('Result changed')
+                        if delegator.screenshot_budget_exhausted(user, chat, token):
+                            flow.update(step='manual_trip', revision=expected, nonce=token_urlsafe(12))
+                            message = MANUAL_TRIP_PROMPT
+                        elif category == 'media_error':
+                            message = ('Axle couldn’t open the image. When safely parked, '
+                                       'resend it as a PNG or JPEG.')
+                        else:
+                            flow['warp_upload_paused'] = True
+                            message = ('Axle couldn’t finish reading the screenshot. '
+                                       'Contact the pilot operator before sending another image.')
+                        flow['warp_screenshot_notice'] = message
                     if inbox._delivery_pool is None:
                         inbox._delivery_pool = DeliveryPool(None)
                     pool = inbox._delivery_pool
-                pool.send(chat, 'Axle could not validate the screenshot extraction. '
+                pool.send(chat, message or ('Axle could not validate the screenshot extraction. '
                     'Pause this test and contact the operator before another upload. '
-                    'The attempt remains recorded. /forget withdraws consent.',
+                    'The attempt remains recorded. /forget withdraws consent.'),
                     failure_guard, send)
             except Exception:
                 pass  # A notification has one bounded attempt; retain the extraction cause.
@@ -1247,9 +1321,10 @@ def run_screenshot(inbox, delegator, send, *, user: int, chat: int, update_id: i
         try:
             # Best-effort recovery hint for /refresh; durable state is recorded above.
             # Fixed text only: no provider detail, pixels or secrets.
-            flow = inbox._conversation_states.get(carrier)
-            if flow is not None:
-                flow['screenshot_notice'] = True
+            with inbox._lock:
+                flow = inbox._conversation_states.get(carrier)
+                if not warp and flow is not None and flow.get('token') == token:
+                    flow['screenshot_notice'] = True
         except Exception:
             pass
         raise RuntimeError('Worker failed; outcome uncertain; no automatic retry') from None

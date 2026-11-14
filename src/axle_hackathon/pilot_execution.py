@@ -12,8 +12,9 @@ def _seconds(value):
 
 # Sanitized failure categories only; exception text and payloads never persist.
 FAILURE_CATEGORIES = frozenset({
-    'provider_error', 'provider_timeout', 'invalid_model_response',
+    'provider_error', 'provider_timeout', 'provider_unavailable', 'invalid_model_response',
     'extraction_response_shape', 'extraction_incomplete', 'extraction_truncated',
+    'extraction_filtered',
     'extraction_empty', 'extraction_json', 'extraction_schema', 'extraction_limits',
     'extraction_issues_count',
     'extraction_response_limit', 'extraction_collection_limit',
@@ -77,12 +78,17 @@ class BoundedDelegator:
         return self._run(self._delegator.evaluate, args, {})
 
     def extract(self, *args, **kwargs):
+        if kwargs.get('admit') is not None:
+            # A timed-out extraction must not publish a late draft.
+            timed_out = Event()
+            return self._run(self._delegator.extract, args,
+                             {**kwargs, 'timed_out': timed_out}, timed_out=timed_out)
         return self._run(self._delegator.extract, args, kwargs)
 
     def select_pricing(self, *args, **kwargs):
         return self._run(self._delegator.select_pricing, args, kwargs)
 
-    def _run(self, func, args, kwargs):
+    def _run(self, func, args, kwargs, *, timed_out=None):
         if not self._slot.acquire(blocking=False):
             raise RuntimeError('Provider capacity reached')
         def attempt():
@@ -94,6 +100,8 @@ class BoundedDelegator:
             raise RuntimeError('Provider unavailable') from None
         try:return future.result(timeout=self._timeout)
         except TimeoutError:
+            if timed_out is not None:
+                timed_out.set()
             error = RuntimeError('Provider outcome uncertain; no automatic retry')
             error.failure_category = 'provider_timeout'
             raise error from None
