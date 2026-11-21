@@ -10,6 +10,43 @@ def _seconds(value):
     return value
 
 
+# Sanitized failure categories only; exception text and payloads never persist.
+FAILURE_CATEGORIES = frozenset({
+    'provider_error', 'provider_timeout', 'invalid_model_response',
+    'media_error', 'delivery_error', 'budget_exhausted',
+    'consent_unavailable', 'stale_revision', 'missing_inputs', 'unknown'})
+
+
+def failure_category_for(exc, *, stage=None):
+    """Map one internal failure to a fixed category. No payload is retained."""
+    if stage == 'delivery':
+        return 'delivery_error'
+    category = getattr(exc, 'failure_category', None)
+    if category in FAILURE_CATEGORIES:
+        return category
+    message = str(exc)
+    if isinstance(exc, PermissionError) or 'Current consent required' in message:
+        return 'consent_unavailable'
+    if 'Missing pricing inputs' in message:
+        return 'missing_inputs'
+    if 'Attempt budget exhausted' in message or 'budget' in message.lower():
+        return 'budget_exhausted'
+    if 'Invalid model' in message or 'Invalid provider response' in message:
+        return 'invalid_model_response'
+    if ('Media' in message or 'file size' in message or 'file reference' in message
+            or 'PNG or JPEG' in message or 'Normalized image' in message):
+        return 'media_error'
+    if 'Model ' in message and 'failed' in message:
+        return 'provider_error'
+    if 'Remote outcome uncertain' in message:
+        return 'provider_error'
+    if ('Stale' in message or 'confirmed revision' in message
+            or 'Result changed' in message or 'cannot be claimed' in message
+            or isinstance(exc, KeyError)):
+        return 'stale_revision'
+    return 'unknown'
+
+
 class BoundedDelegator:
     """One provider operation at a time, with a bounded caller wait and no retries.
 
@@ -23,18 +60,33 @@ class BoundedDelegator:
         self._executor = TrackedExecutor(max_workers=1, thread_name_prefix='pilot-model')
 
     def evaluate(self, *args):
+        return self._run(self._delegator.evaluate, args, {})
+
+    def extract(self, *args, **kwargs):
+        return self._run(self._delegator.extract, args, kwargs)
+
+    def select_pricing(self, *args, **kwargs):
+        return self._run(self._delegator.select_pricing, args, kwargs)
+
+    def _run(self, func, args, kwargs):
         if not self._slot.acquire(blocking=False):
             raise RuntimeError('Provider capacity reached')
         def attempt():
-            try:return self._delegator.evaluate(*args)
+            try:return func(*args, **kwargs)
             finally:self._slot.release()
         try:future = self._executor.submit(attempt)
         except Exception:
             self._slot.release()
             raise RuntimeError('Provider unavailable') from None
         try:return future.result(timeout=self._timeout)
-        except Exception:
-            raise RuntimeError('Provider outcome uncertain; no automatic retry') from None
+        except TimeoutError:
+            error = RuntimeError('Provider outcome uncertain; no automatic retry')
+            error.failure_category = 'provider_timeout'
+            raise error from None
+        except Exception as exc:
+            error = RuntimeError('Provider outcome uncertain; no automatic retry')
+            error.failure_category = failure_category_for(exc)
+            raise error from None
 
     @property
     def drained(self):

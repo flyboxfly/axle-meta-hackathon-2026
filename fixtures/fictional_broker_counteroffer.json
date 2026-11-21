@@ -1,0 +1,7 @@
+{
+  "fixture": "FICTIONAL broker counteroffer for offline rehearsal only",
+  "fictional": true,
+  "warning": "Invented figures. Never a real broker interaction; never alter a real screenshot to imply a genuine rate.",
+  "counteroffer_usd": "1875.00",
+  "note": "Fictional dispatcher phone counter, invented for rehearsal"
+}

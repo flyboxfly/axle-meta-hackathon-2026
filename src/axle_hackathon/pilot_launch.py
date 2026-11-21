@@ -10,7 +10,7 @@ import signal
 import threading
 import sys
 import uvicorn
-from .pilot_factory import build_synthetic_host
+from .pilot_factory import build_opening_host, build_synthetic_host
 from .pilot_memory import MemoryPolicy
 
 
@@ -38,6 +38,38 @@ def read_private_config(path):
         keys={'approved_synthetic_owner_test','provider_key','bot_token','webhook_secret',
               'allowed_host','user_id','chat_id'}
         if set(data)!=keys or data['approved_synthetic_owner_test'] is not True:raise ValueError()
+        if any(type(data[k]) is not int or not 0<data[k]<2**53 for k in ('user_id','chat_id')):raise ValueError()
+        if any(not isinstance(data[k],str) or not data[k] for k in
+               ('provider_key','bot_token','webhook_secret','allowed_host')):raise ValueError()
+        return data,path.parent/'pilot.sqlite3'
+    except Exception:
+        raise RuntimeError('Private pilot configuration rejected') from None
+
+
+def read_real_config(path):
+    """Distinct real opening-test configuration; synthetic approval never matches."""
+    try:
+        path=Path(path)
+        parent=path.parent.stat()
+        if (not path.is_absolute() or parent.st_uid!=os.getuid()
+                or stat.S_IMODE(parent.st_mode)!=0o700):raise ValueError()
+        fd=os.open(path,os.O_RDONLY|os.O_NOFOLLOW|os.O_NONBLOCK)
+        with os.fdopen(fd,'rb') as file:
+            info=os.fstat(file.fileno())
+            if (not stat.S_ISREG(info.st_mode) or info.st_uid!=os.getuid()
+                    or stat.S_IMODE(info.st_mode)!=0o600 or info.st_size>8192):raise ValueError()
+            def unique(pairs):
+                value={}
+                for key,item in pairs:
+                    if key in value:raise ValueError()
+                    value[key]=item
+                return value
+            raw=file.read(8193)
+            if len(raw)>8192:raise ValueError()
+            data=json.loads(raw,object_pairs_hook=unique)
+        keys={'approved_real_opening_test','provider_key','bot_token','webhook_secret',
+              'allowed_host','user_id','chat_id'}
+        if set(data)!=keys or data['approved_real_opening_test'] is not True:raise ValueError()
         if any(type(data[k]) is not int or not 0<data[k]<2**53 for k in ('user_id','chat_id')):raise ValueError()
         if any(not isinstance(data[k],str) or not data[k] for k in
                ('provider_key','bot_token','webhook_secret','allowed_host')):raise ValueError()
@@ -104,6 +136,27 @@ def main():
             provider_key=data['provider_key'],bot_token=data['bot_token'],
             webhook_secret=data['webhook_secret'],allowed_host=data['allowed_host'],
             global_limit=2,carrier_limit=2)
+        asyncio.run(serve_host(host))
+    except Exception:
+        print('Pilot launcher stopped; inspect approved metadata-only recovery procedure.',file=sys.stderr)
+        return 1
+    return 0
+
+
+def main_real():
+    configure_private_logging()
+    os.umask(0o077)
+    try:
+        data,path=read_real_config(os.environ.get('AXLE_PILOT_CONFIG_FILE',''))
+        host=build_opening_host(path,{(data['user_id'],data['chat_id']):'owner'},
+            MemoryPolicy(version='real-opening-v1',processing_notice=
+                'Real opening-price test. One owner screenshot is fetched and sent to Meta '
+                '(Muse Wonder) for extraction; figures are preliminary drafts, never sent '
+                'to brokers. Telegram and provider histories are separate; application '
+                'session expires after one hour. /forget withdraws consent.'),
+            provider_key=data['provider_key'],bot_token=data['bot_token'],
+            webhook_secret=data['webhook_secret'],allowed_host=data['allowed_host'],
+            global_limit=4,carrier_limit=4)
         asyncio.run(serve_host(host))
     except Exception:
         print('Pilot launcher stopped; inspect approved metadata-only recovery procedure.',file=sys.stderr)
